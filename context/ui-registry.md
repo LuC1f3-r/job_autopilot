@@ -76,6 +76,29 @@ Bottom banner — same `bg-hero-gradient` card treatment and same `Button` pair 
 
 ---
 
+### Form primitives (Input / Select / Textarea / TagInput / FormButton / FieldLabel / ProgressRing)
+
+`components/ui/{input,select,textarea,tag-input,form-button,field-label,progress-ring}.tsx`
+
+First real form components in the app — `Button` (above) is link-only, these are actual `<input>`/`<select>`/`<button>` elements for the Profile page and beyond.
+
+- `FieldLabel` — shared label wrapper: `mb-1.5 block text-xs font-medium tracking-wide text-text-secondary uppercase`. Every labeled field uses this, don't reinvent it inline.
+- `Input` / `Select` / `Textarea` — same field chrome: `border border-border bg-surface rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-1 focus:ring-accent`. `disabled:` gets `bg-surface-secondary text-text-muted cursor-not-allowed` (used for the read-only Email field). `Select` adds a `lucide-react` `ChevronDown` absolutely positioned at `right-3`, native `<select>` underneath with `appearance-none`.
+- `TagInput` — text field + `Add` `FormButton` inline, pills below as `rounded-full bg-surface-secondary px-3 py-1 text-sm font-medium` with an `X` icon button to remove. Client component, controlled via `tags`/`onChange` props — parent owns the array state (see `ProfileForm`).
+- `FormButton` — real `<button type="button">`, variants `primary` (`bg-accent text-accent-foreground hover:bg-accent-dark`), `secondary` (`bg-surface border border-border hover:bg-surface-secondary`), `ghost`. Use this (not `Button`) for any non-navigation action — Save, Add, Select Resume, Generate, etc.
+- `ProgressRing` — SVG circular progress, `stroke-linecap: round`, track at 15% opacity of the fill color. Fill color scales green (`--color-success`, ≥80%) / red (`--color-error`, ≥50%) / orange (`--color-warning`, <50%). Percent label centered via absolutely-positioned `<span>`.
+
+### Profile page sections
+
+`components/profile/{ProfileAttentionBanner,ResumeUpload,ProfileForm}.tsx`, route `app/profile/page.tsx`
+
+- `ProfileAttentionBanner` — card with `AlertCircle` (lucide) + heading, missing-field pills as `rounded-full bg-error/10 text-error text-xs uppercase`, `ProgressRing` right-aligned. Take `completionPercent`/`missingFields` as props — currently hardcoded mock values in the page (Feature 06 will compute real ones).
+- `ResumeUpload` — dashed dropzone card (`border-dashed border-border-muted bg-surface-secondary`), visual only — no upload wiring yet.
+- `ProfileForm` — single client component owning all form state (skills/industries tags, work-experience rows). Sections separated by `border-t border-border-light pt-6` inside one card, each with a `text-sm font-semibold` sub-heading. Work Experience caps at 3 roles (build-plan spec) via `MAX_WORK_EXPERIENCE_ROLES`; "Currently working here" checkbox disables the End Date input and clears it. All fields pre-filled with static mock values except `email`, which comes from the real session user and is read-only.
+- Reuse this "card containing multiple `border-t`-separated sub-sections" shape for any future long-form settings/profile-style page before inventing a new layout.
+
+---
+
 ## Shared Patterns
 
 - `.bg-hero-gradient` (globals.css) — soft multi-tone radial mesh built from `--color-accent-light`, `--color-info-light`, `--color-accent-muted` over `--color-surface`. Used by Hero and CTA only.

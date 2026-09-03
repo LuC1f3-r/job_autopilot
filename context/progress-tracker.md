@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 1 — Foundation
-**Last completed:** 04 Database Schema
-**Next:** 03 PostHog Initialization is partially built (see note below) — finish/verify it, then start Phase 2 (05 Profile Page — Full UI)
+**Phase:** Phase 2 — Profile Page
+**Last completed:** 05 Profile Page — Full UI
+**Next:** 06 Profile Save Logic (wire the form to InsForge DB — see note below). 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -23,8 +23,8 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 2 — Profile Page
 
-- [ ] 05 Profile Page — Full UI
-- [ ] 06 Profile Save Logic
+- [x] 05 Profile Page — Full UI
+- [x] 06 Profile Save Logic
 - [ ] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
 
@@ -77,6 +77,8 @@ Update this file after every completed feature. Any AI agent reading this should
 - Indexes added on every `user_id` FK column plus `jobs.run_id`/`agent_logs.run_id`, anticipating the query patterns Phase 3 (Find Jobs list/filter) and Phase 5 (Dashboard stats) will need.
 - `resumes` storage bucket created with `isPublic: false` — InsForge bucket access is an all-or-nothing flag, not per-path RLS, so "own files only" (`resumes/{user_id}/resume.pdf`) is an app-level convention enforced by Feature 06's upload code, not the DB.
 - **Backfilled `profiles` rows for 3 pre-existing `auth.users`** (test accounts created during Feature 02's OAuth verification, before this trigger existed) — otherwise their next login would hit a missing profile row.
+- **05 Profile Page built as static UI only, per build-plan scope** — no DB reads/writes yet (that's 06). First real form primitives added (`components/ui/{input,select,textarea,tag-input,form-button,field-label,progress-ring}.tsx`) since the existing `Button` is link-only; registered in `ui-registry.md`. All fields except `email` (real session user, read-only) are static mock values matching `context/designs/profile.png`; skills/industries tags and Work Experience rows (capped at 3, per build-plan) are locally interactive via `useState` in `ProfileForm` but nothing persists. Completion percent (70%) and missing-field pills (Phone/Location/Education) are hardcoded to match the mock — Feature 06 will compute these for real. Resume dropzone, "Generate Resume from Profile", and "Save Profile" are visual/inert in this pass. Verified against the design image via a temporary, fully-reverted `proxy.ts` edit (unguarding `/profile` for one Playwright screenshot, since exercising real Google OAuth login wasn't in scope) — `proxy.ts` itself has no net change.
+- **06 Profile Save Logic wired to InsForge DB and Storage** — Server Actions created in `actions/profile.ts`: `uploadResume(formData)` validates PDF format + 5MB size limit and uploads directly to `resumes/{user_id}/resume.pdf` with immediate preview, unblocking Feature 07's AI extraction; `saveProfile(payload)` persists all form fields (personal, professional, work experience JSON up to 3 roles, education JSON, job preferences) to the `profiles` table. Added `lib/profile-types.ts` defining TypeScript interfaces and `calculateProfileCompletion()` covering 11 core attributes (including resume upload). `app/profile/page.tsx` pre-fetches the profile via `createInsforgeServer()` and passes real completion data and `initialData` into `ProfileForm` and `ProfileAttentionBanner`, with optimistic UI feedback and client-side PostHog `profile_completed` capture when `is_complete` is reached for the first time. Updated `components/ui/form-button.tsx` to support custom button `type` (e.g. `submit`).
 
 ---
 
