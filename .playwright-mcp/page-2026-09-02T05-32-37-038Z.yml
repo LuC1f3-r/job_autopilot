@@ -1,0 +1,14 @@
+- generic [active] [ref=f11e1]:
+  - main [ref=f11e2]:
+    - generic [ref=f11e3]:
+      - link [ref=f11e4] [cursor=pointer]:
+        - /url: /
+        - img "JobPilot" [ref=f11e5]
+      - heading "Welcome back" [level=1] [ref=f11e6]
+      - paragraph [ref=f11e7]: Sign in to find your next role faster.
+      - generic [ref=f11e9]:
+        - button "Continue with Google" [ref=f11e11]
+        - button "Continue with GitHub" [ref=f11e18]
+      - paragraph [ref=f11e21]: By continuing you agree to JobPilot's Terms and Privacy Policy.
+  - button "Open Next.js Dev Tools" [ref=f11e27] [cursor=pointer]
+  - alert [ref=f11e31]
