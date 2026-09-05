@@ -1,8 +1,7 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { ProfileAttentionBanner } from "@/components/profile/ProfileAttentionBanner";
-import { ResumeUpload } from "@/components/profile/ResumeUpload";
-import { ProfileForm } from "@/components/profile/ProfileForm";
+import { ProfileEditor } from "@/components/profile/ProfileEditor";
 import { createInsforgeServer, getSessionUser } from "@/lib/insforge-server";
 import { Profile, calculateProfileCompletion } from "@/lib/profile-types";
 
@@ -32,8 +31,7 @@ export default async function ProfilePage() {
           completionPercent={completion.percentage}
           missingFields={completion.missingFields}
         />
-        <ResumeUpload currentResumeUrl={profile?.resume_pdf_url} />
-        <ProfileForm
+        <ProfileEditor
           email={user?.email ?? profile?.email ?? ""}
           initialData={profile}
         />

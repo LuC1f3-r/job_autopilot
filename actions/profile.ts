@@ -1,12 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { PDFParse } from "pdf-parse";
 import { createInsforgeServer, getSessionUser } from "@/lib/insforge-server";
+import { ensurePdfWorkerConfigured } from "@/lib/pdf-worker-setup";
 import {
   Profile,
   ProfileFormData,
   calculateProfileCompletion,
 } from "@/lib/profile-types";
+import { isAnthropicConfigured } from "@/lib/anthropic";
+import { isOpenRouterConfigured } from "@/lib/openrouter";
+import { extractStructuredData, NoAiProviderConfiguredError } from "@/lib/ai-extraction";
+import {
+  ExtractedProfileData,
+  RESUME_EXTRACTION_JSON_SCHEMA,
+  RESUME_EXTRACTION_SYSTEM_PROMPT,
+} from "@/lib/resume-extraction-schema";
+
+const MIN_EXTRACTABLE_TEXT_LENGTH = 50;
 
 export async function uploadResume(formData: FormData): Promise<{
   success: boolean;
@@ -205,5 +217,111 @@ export async function saveProfile(formData: ProfileFormData): Promise<{
   } catch (error) {
     console.error("[actions/profile:saveProfile]", error);
     return { success: false, error: "Failed to save profile" };
+  }
+}
+
+export async function extractProfileFromResume(): Promise<{
+  success: boolean;
+  data?: ExtractedProfileData;
+  error?: string;
+}> {
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    if (!isAnthropicConfigured() && !isOpenRouterConfigured()) {
+      return {
+        success: false,
+        error: "AI extraction is not configured yet. Please try again later.",
+      };
+    }
+
+    const insforge = await createInsforgeServer();
+
+    const { data: existingRows } = await insforge.database
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id);
+    const existing = (existingRows?.[0] as Profile) || null;
+
+    if (!existing?.resume_pdf_url) {
+      return { success: false, error: "Upload a resume before extracting." };
+    }
+
+    const { data: blob, error: downloadError } = await insforge.storage
+      .from("resumes")
+      .download(`${user.id}/resume.pdf`);
+
+    if (downloadError || !blob) {
+      console.error(
+        "[actions/profile:extractProfileFromResume] storage download error:",
+        downloadError
+      );
+      return { success: false, error: "Could not load your uploaded resume." };
+    }
+
+    const buffer = Buffer.from(await blob.arrayBuffer());
+
+    let extractedText = "";
+    ensurePdfWorkerConfigured();
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const result = await parser.getText();
+      extractedText = result.text?.trim() || "";
+    } catch (parseError) {
+      console.error(
+        "[actions/profile:extractProfileFromResume] pdf-parse error:",
+        parseError
+      );
+      return {
+        success: false,
+        error: "Could not extract text from this PDF. Please try a different file.",
+      };
+    } finally {
+      await parser.destroy();
+    }
+
+    if (extractedText.length < MIN_EXTRACTABLE_TEXT_LENGTH) {
+      return {
+        success: false,
+        error: "Could not extract text from this PDF. Please try a different file.",
+      };
+    }
+
+    let extracted: ExtractedProfileData;
+    try {
+      extracted = await extractStructuredData<ExtractedProfileData>(
+        extractedText,
+        RESUME_EXTRACTION_JSON_SCHEMA,
+        RESUME_EXTRACTION_SYSTEM_PROMPT
+      );
+    } catch (aiError) {
+      if (aiError instanceof NoAiProviderConfiguredError) {
+        return {
+          success: false,
+          error: "AI extraction is not configured yet. Please try again later.",
+        };
+      }
+      console.error(
+        "[actions/profile:extractProfileFromResume] AI extraction error:",
+        aiError
+      );
+      return {
+        success: false,
+        error:
+          "Something went wrong while extracting your resume. Please try again or fill the form manually.",
+      };
+    }
+
+    return { success: true, data: extracted };
+  } catch (error) {
+    console.error("[actions/profile:extractProfileFromResume]", error);
+    return {
+      success: false,
+      error:
+        "Something went wrong while extracting your resume. Please try again or fill the form manually.",
+    };
   }
 }

@@ -1,19 +1,25 @@
 "use client";
 
 import { useState, useRef, ChangeEvent, DragEvent } from "react";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, ExternalLink, Sparkles } from "lucide-react";
+import posthog from "posthog-js";
 import { FormButton } from "@/components/ui/form-button";
-import { uploadResume } from "@/actions/profile";
+import { uploadResume, extractProfileFromResume } from "@/actions/profile";
+import { countPopulatedFields, type ExtractedProfileData } from "@/lib/resume-extraction-schema";
 
 type Props = {
   currentResumeUrl?: string | null;
+  onExtracted?: (data: ExtractedProfileData) => void;
+  onUploaded?: (url: string) => void;
 };
 
-export function ResumeUpload({ currentResumeUrl }: Props) {
+export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Props) {
   const [resumeUrl, setResumeUrl] = useState<string | null>(currentResumeUrl || null);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -37,6 +43,7 @@ export function ResumeUpload({ currentResumeUrl }: Props) {
       const res = await uploadResume(formData);
       if (res.success && res.url) {
         setResumeUrl(res.url);
+        onUploaded?.(res.url);
       } else {
         setErrorMessage(res.error || "Failed to upload resume.");
       }
@@ -71,6 +78,27 @@ export function ResumeUpload({ currentResumeUrl }: Props) {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       handleFile(file);
+    }
+  };
+
+  const handleExtract = async () => {
+    setExtractError(null);
+    setIsExtracting(true);
+    try {
+      const res = await extractProfileFromResume();
+      if (res.success && res.data) {
+        onExtracted?.(res.data);
+        posthog.capture("resume_extracted", {
+          fieldsPopulated: countPopulatedFields(res.data),
+        });
+      } else {
+        setExtractError(res.error || "Failed to extract profile from resume.");
+      }
+    } catch (err) {
+      console.error("Resume extraction error:", err);
+      setExtractError("An unexpected error occurred while extracting your resume.");
+    } finally {
+      setIsExtracting(false);
     }
   };
 
@@ -120,8 +148,23 @@ export function ResumeUpload({ currentResumeUrl }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <FormButton
+              variant="primary"
+              disabled={isUploading || isExtracting}
+              icon={isExtracting ? undefined : <Sparkles className="h-4 w-4" />}
+              onClick={handleExtract}
+            >
+              {isExtracting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Extracting...
+                </>
+              ) : (
+                "Extract from Resume"
+              )}
+            </FormButton>
+            <FormButton
               variant="secondary"
-              disabled={isUploading}
+              disabled={isUploading || isExtracting}
               onClick={() => fileInputRef.current?.click()}
             >
               {isUploading ? (
@@ -183,6 +226,13 @@ export function ResumeUpload({ currentResumeUrl }: Props) {
         <div className="mt-3 flex items-center gap-2 text-xs font-medium text-error">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {extractError && (
+        <div className="mt-3 flex items-center gap-2 text-xs font-medium text-error">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{extractError}</span>
         </div>
       )}
 

@@ -232,8 +232,9 @@ All PostHog events must use these exact event names. Never invent new event name
 | `oauth_sign_in_started`  | OAuth provider button clicked on /login     | provider                    |
 | `user_signed_out`        | Sign out submitted                          | —                            |
 | `auth_error_shown`       | Login page renders with an OAuth error      | error                        |
+| `resume_extracted`       | AI extraction from uploaded resume succeeds | userId, fieldsPopulated      |
 
-These eight events are the only events in this project. Do not add more without updating this list first.
+These nine events are the only events in this project. Do not add more without updating this list first.
 
 `job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
 `company_researched` powers the Company Research Activity dashboard chart.
@@ -252,12 +253,16 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
 | `OPENAI_API_KEY`                | agent/ functions       |
+| `ANTHROPIC_API_KEY`             | lib/anthropic.ts       |
+| `OPENROUTER_API_KEY`            | lib/openrouter.ts      |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
 | `NEXT_PUBLIC_POSTHOG_HOST`      | lib/posthog-client.ts  |
 
 `NEXT_PUBLIC_` prefix means the variable is exposed to the browser. Never add `NEXT_PUBLIC_` to secret keys.
+
+Structured AI extraction (e.g. Feature 07's resume parsing) goes through `lib/ai-extraction.ts`'s `extractStructuredData()`, not a provider SDK directly — it picks Anthropic (`ANTHROPIC_API_KEY`, forced tool-use) if configured, else falls back to OpenRouter (`OPENROUTER_API_KEY`, currently `z-ai/glm-5.2:free` — a free-tier model with `structured_outputs` support, via `response_format: json_schema`). New AI-backed features should call that function rather than hardcoding a single provider. Provider selection is presence-based only (Anthropic wins if its key is set, no runtime failover on API failure) — if Anthropic errors (e.g. no credits), comment out `ANTHROPIC_API_KEY` to force the OpenRouter path.
 
 ---
 

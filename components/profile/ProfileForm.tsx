@@ -9,7 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { FormButton } from "@/components/ui/form-button";
 import { saveProfile } from "@/actions/profile";
-import type { Profile, WorkExperienceItem, ProfileFormData } from "@/lib/profile-types";
+import {
+  MAX_WORK_EXPERIENCE_ROLES,
+  type Profile,
+  type WorkExperienceItem,
+  type ProfileFormData,
+} from "@/lib/profile-types";
 
 // Stored values are the lowercase snake_case enums documented in
 // context/architecture.md's `profiles` schema — labels are for display only.
@@ -38,14 +43,13 @@ const COVER_LETTER_TONE_OPTIONS = [
   { label: "Casual", value: "casual" },
 ];
 
-const MAX_WORK_EXPERIENCE_ROLES = 3;
-
 type Props = {
   email: string;
   initialData?: Profile | null;
+  onDirtyChange?: (isDirty: boolean) => void;
 };
 
-export function ProfileForm({ email, initialData }: Props) {
+export function ProfileForm({ email, initialData, onDirtyChange }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";
@@ -159,6 +163,7 @@ export function ProfileForm({ email, initialData }: Props) {
         if (result.justCompleted) {
           posthog.capture("profile_completed");
         }
+        onDirtyChange?.(false);
       } else {
         const errorText = result.error || "Failed to save profile. Please try again.";
         setStatusMessage({
@@ -192,6 +197,7 @@ export function ProfileForm({ email, initialData }: Props) {
     <>
       <form
         onSubmit={handleSubmit}
+        onChange={() => onDirtyChange?.(true)}
         className="rounded-2xl border border-border bg-surface p-6 shadow-sm"
       >
         <div className="flex items-center justify-between">

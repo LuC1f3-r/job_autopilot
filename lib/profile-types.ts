@@ -1,3 +1,5 @@
+export const MAX_WORK_EXPERIENCE_ROLES = 3;
+
 export type WorkExperienceItem = {
   id: string;
   companyName: string;
