@@ -233,8 +233,9 @@ All PostHog events must use these exact event names. Never invent new event name
 | `user_signed_out`        | Sign out submitted                          | —                            |
 | `auth_error_shown`       | Login page renders with an OAuth error      | error                        |
 | `resume_extracted`       | AI extraction from uploaded resume succeeds | userId, fieldsPopulated      |
+| `resume_generated`       | AI-generated PDF resume saved from profile  | userId, hadExistingResume    |
 
-These nine events are the only events in this project. Do not add more without updating this list first.
+These ten events are the only events in this project. Do not add more without updating this list first.
 
 `job_found` powers the Jobs Found Over Time and Match Score Distribution dashboard charts.
 `company_researched` powers the Company Research Activity dashboard chart.

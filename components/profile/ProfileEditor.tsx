@@ -102,12 +102,25 @@ export function ProfileEditor({ email, initialData }: Props) {
     );
   }
 
+  function handleDeleted() {
+    setProfileData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        resume_pdf_url: null,
+      };
+    });
+  }
+
   return (
     <>
       <ResumeUpload
         currentResumeUrl={profileData?.resume_pdf_url}
+        isProfileComplete={profileData?.is_complete ?? false}
         onExtracted={handleExtracted}
         onUploaded={handleUploaded}
+        onGenerated={handleUploaded}
+        onDeleted={handleDeleted}
       />
       <ProfileForm
         key={formKey}

@@ -87,6 +87,15 @@ First real form components in the app — `Button` (above) is link-only, these a
 - `TagInput` — text field + `Add` `FormButton` inline, pills below as `rounded-full bg-surface-secondary px-3 py-1 text-sm font-medium` with an `X` icon button to remove. Client component, controlled via `tags`/`onChange` props — parent owns the array state (see `ProfileForm`).
 - `FormButton` — real `<button type="button">`, variants `primary` (`bg-accent text-accent-foreground hover:bg-accent-dark`), `secondary` (`bg-surface border border-border hover:bg-surface-secondary`), `ghost`. Use this (not `Button`) for any non-navigation action — Save, Add, Select Resume, Generate, etc.
 - `ProgressRing` — SVG circular progress, `stroke-linecap: round`, track at 15% opacity of the fill color. Fill color scales green (`--color-success`, ≥80%) / red (`--color-error`, ≥50%) / orange (`--color-warning`, <50%). Percent label centered via absolutely-positioned `<span>`.
+- `Input` / `Select` now also accept an optional `icon` prop (leading icon, absolutely positioned `left-3`, input gets `pl-9` automatically) and treat an empty `label` as "no label" — skips rendering `FieldLabel` and lets `id` stay `undefined` rather than colliding on an empty-string-derived id. Added for Feature 09's icon-prefixed search inputs and unlabeled filter/sort dropdowns; use `aria-label` in place of a visible label when doing this.
+
+### Find Jobs page sections
+
+`components/find-jobs/{SearchControls,JobsTable}.tsx`, route `app/find-jobs/page.tsx`
+
+- `SearchControls` — top card: Job Title / Location `Input`s with a leading `Search` icon, `FormButton` `variant="primary"` "Find Jobs" action, static success banner below (`bg-success-lightest text-success-foreground rounded-xl`, `Sparkles` icon). Feature 09 renders this fully static — no `onClick` logic; Feature 10 wires the real Adzuna search behind it.
+- `JobsTable` — filter bar (icon `Input` + two unlabeled `Select`s for match filter / sort) over a table (`COMPANY`/`ROLE`/`MATCH SCORE`/`SALARY EST.`/`DATE FOUND`) and a static pagination bar. Match score renders as a small inline bar + percentage via a local `MatchScoreBar`/`matchScoreColor` — color scale is green (`bg-success`, ≥90%) / blue (`bg-info-medium`, 80–89%) / orange (`bg-warning`, <90%), matching the design mock exactly (don't reuse `ProgressRing`'s scale here, it's tuned for profile-completion percentages, not match scores). Mock job rows are a local `MockJob[]` shaped ahead of Feature 10's `jobs` table schema (no shared `Job` type exists yet — rebase onto it once Feature 10 lands). Filter bar, sort dropdowns, and pagination are all inert in Feature 09; Feature 11 wires them to real InsForge queries.
+- No SOURCE column — the build-plan text lists one, but `context/designs/find-jobs.png` doesn't show it and no second source value (only `'search'`) exists until Feature 12/13's URL-based flow. Add it then.
 
 ### Profile page sections
 

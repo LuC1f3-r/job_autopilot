@@ -138,19 +138,64 @@ Extract from Resume button — GPT-4o reads uploaded PDF and auto-fills profile 
 
 ### 08 Resume PDF Generation from Profile
 
-Generate a clean professional PDF resume from current profile data using GPT-4o.
+Generate a clean professional PDF resume from current profile data, following the layout in `public/2025-template_bullet.docx` (Harvard OCS-style template). Reuses the existing `lib/ai-extraction.ts` provider abstraction (Anthropic-first, OpenRouter-fallback, free-tier model rotation) — no new provider code, no hardcoded single model.
+
+**Template layout (`public/2025-template_bullet.docx`) — the exact structure `ResumePdfDocument.tsx` must reproduce:**
+
+- **Header** — centered: Full Name (bold, larger) → Street Address • City, State Zip • Email • Phone, all on one line
+- **Section headers** (bold, centered, with a bottom rule beneath): `Education`, `Experience`, `Leadership & Activities`, `Skills & Interests` — in that order. Our data has no leadership/activities source, so that section is omitted entirely rather than rendered empty (see Decisions below)
+- **Per-entry row structure**, repeated for each Education and Experience item:
+  - Line 1: **Org/School name** (bold, left-aligned) with the City/State right-aligned on the same line (tab-aligned in the template; a flex row with `justifyContent: space-between` in React-PDF)
+  - Line 2: *Degree/Position title* (italic or bold per template, left-aligned) with the date range right-aligned on the same line
+  - Bullet points beneath (Experience only) — one line per bullet, no personal pronouns, phrase not full sentence, action-verb-led
+- **Skills & Interests section** — labeled sub-lines, not bare tags: `Technical:`, `Language:`, `Laboratory:`, `Interests:` each followed by a comma-separated list. Our profile data only populates `Technical` (from `skillsSummary`) — the other three labels are omitted when we have nothing to put after them, not printed with empty values
+- No photos, icons, or colored blocks — matches the template's plain black-text-on-white, single-column, single-page layout
+
+**UI:**
+
+- "Generate Resume from Profile" button already exists on the profile page (Feature 05), directly under the resume upload area — currently inert, this feature wires it up
+- Disabled with a tooltip ("Complete your profile first") until `is_complete` is true — the AI has nothing to write a resume from otherwise
+- Loading state on click ("Generating…") while the request is in flight
+- On success: resume preview link updates to the newly generated PDF, success toast/message shown
+- On failure: inline error message, button re-enabled, existing resume (if any) is left untouched
 
 **Logic:**
 
-- POST /api/resume/generate
-- Reads current profile data from profiles table
-- GPT-4o generates professional resume content:
-  - Professional summary paragraph
-  - Polished work experience bullet points
-  - Clean professional language throughout
-- @react-pdf/renderer renders GPT-4o output into clean single-page PDF using renderToBuffer()
-- Buffer uploaded to InsForge Storage at resumes/{user_id}/resume.pdf with upsert: true
-- resume_pdf_url updated in profiles table
+- `POST /api/resume/generate` (route handler, not a Server Action — returns a binary-backed URL and benefits from being callable independently of form submission)
+- Load current profile row from `profiles` table for the authenticated user (session via InsForge server client, same pattern as every other authenticated route)
+- Guard: if `is_complete` is false, or required fields (`full_name`, `current_title`, `work_experience`) are missing — return 400 with a clear error, do not call the AI or touch storage
+- **Content generation** — calls `extractStructuredData()` from `lib/ai-extraction.ts` (same function Feature 07 uses), passing:
+  - A system prompt instructing the model to act as a professional resume writer following the Harvard OCS bullet-point convention shown in the template: rewrite the candidate's raw profile data into polished, concise, ATS-friendly resume bullets — action-verb-led, quantified where possible, no personal pronouns, phrase not full sentence — no invented facts, no new employers/dates/skills, only rephrasing and tightening what's given. No professional-summary paragraph is generated — the template has no such section
+  - A user prompt containing the full profile: name, contact info, current title, years of experience, skills, industries, work experience (company/title/dates/responsibilities per role), education, job preferences
+  - A JSON schema (new file: `lib/resume-generation-schema.ts`, mirrors the shape of `lib/resume-extraction-schema.ts`) describing the expected output:
+    ```json
+    {
+      "workExperience": [
+        {
+          "companyName": "string",
+          "jobTitle": "string",
+          "location": "string",
+          "dateRange": "string",
+          "bullets": ["string", "string", "..."]
+        }
+      ],
+      "skillsSummary": ["string"]
+    }
+    ```
+  - `workExperience` entries map 1:1 to the profile's existing `work_experience` array in the same order — the AI polishes language per role, it does not add or remove roles. `location` on each entry is carried through from the profile's `location` field (single field on our profile schema, not per-role) unless we decide to leave the City/State slot blank for work entries — see Assumptions
+  - Temperature kept low (0.3–0.4) — this is rewriting existing facts, not creative generation
+- **PDF rendering** — `@react-pdf/renderer`'s `renderToBuffer()` (new dependency, not yet installed — add alongside this feature) renders a new React-PDF document component (new file: `components/resume/ResumePdfDocument.tsx`) matching the template layout above:
+  - Header: full name (bold, centered) → address/location, email, phone, LinkedIn/portfolio on one centered line (from profile, untouched by AI)
+  - Education section: institution name + graduation year (right-aligned), degree + field of study on the next line — single entry, since our profile only stores one education record (template supports multiple; we render what we have)
+  - Experience section: one block per `work_experience` role — company name + location (right-aligned), job title + date range (right-aligned) on the next line, AI-polished bullets beneath
+  - Skills & Interests section: `Technical:` line listing the AI's `skillsSummary`; `Language:`, `Laboratory:`, `Interests:` lines omitted (no profile data source for them)
+  - Leadership & Activities section omitted entirely — no profile data source
+  - Single page, clean typography (Calibri or closest available React-PDF-safe font), no photos/icons — output must be ATS-parseable (real text layer, not an image)
+- Rendered buffer uploaded to InsForge Storage at `resumes/{user_id}/resume.pdf` with `upsert: true` — **this overwrites whatever the user last uploaded or generated at that path**, consistent with the one-active-resume-per-user convention from Feature 06; the UI must make this overwrite expectation clear (e.g. confirm-before-generate if a user-uploaded resume already exists and hasn't been used for extraction)
+- `resume_pdf_url` updated on the `profiles` table row to point at the new file (same URL shape as Feature 06's upload path, since it's the same storage key)
+- `revalidatePath('/profile')` after the DB update so the profile page reflects the new resume link immediately
+
+**PostHog event:** `resume_generated` — `{ userId, hadExistingResume: boolean }`
 
 ---
 

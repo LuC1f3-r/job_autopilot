@@ -39,5 +39,17 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/profile/:path*", "/find-jobs/:path*"],
+  // Includes /api/resume/:path* so updateSession() runs (refreshing an
+  // expired/near-expiry access-token cookie) before those routes' own
+  // getSessionUser() checks read it — those routes handle their own 401,
+  // they just need the proxy to have run first. Without this prefix here,
+  // Next.js never invokes proxy() for API routes at all, so a stale cookie
+  // is never refreshed and a legitimately logged-in user gets a false 401
+  // (e.g. /api/resume/generate, /api/resume/view).
+  matcher: [
+    "/dashboard/:path*",
+    "/profile/:path*",
+    "/find-jobs/:path*",
+    "/api/resume/:path*",
+  ],
 };

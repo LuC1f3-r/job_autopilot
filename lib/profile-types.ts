@@ -89,7 +89,6 @@ export function calculateProfileCompletion(
         "Work Experience",
         "Education",
         "Target Roles",
-        "Resume",
       ],
     };
   }
@@ -127,10 +126,6 @@ export function calculateProfileCompletion(
       pass:
         Array.isArray(profile.job_titles_seeking) &&
         profile.job_titles_seeking.length > 0,
-    },
-    {
-      label: "Resume",
-      pass: Boolean(profile.resume_pdf_url?.trim()),
     },
   ];
 

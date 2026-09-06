@@ -44,7 +44,7 @@ export function ProfileAttentionBanner({ completionPercent, missingFields }: Pro
           )}
         </div>
       </div>
-      <ProgressRing percent={completionPercent} />
+      {!isComplete && <ProgressRing percent={completionPercent} />}
     </div>
   );
 }

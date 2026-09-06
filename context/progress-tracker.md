@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 2 — Profile Page
-**Last completed:** 07 AI Profile Extraction from Resume
-**Next:** 08 Resume PDF Generation from Profile. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Phase:** Phase 3 — Find Jobs Page
+**Last completed:** 09 Find Jobs Page — Full UI (mock data, no logic)
+**Next:** 10 Adzuna Job Discovery. Feature 08 (Resume PDF Generation) still needs a live browser QA pass to flip from `[~]` to `[x]` — see note below. 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -26,11 +26,11 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
 - [x] 07 AI Profile Extraction from Resume
-- [ ] 08 Resume PDF Generation from Profile
+- [~] 08 Resume PDF Generation from Profile (code-complete, tsc/eslint/build clean; pending live browser QA)
 
 ### Phase 3 — Find Jobs Page
 
-- [ ] 09 Find Jobs Page — Full UI
+- [x] 09 Find Jobs Page — Full UI
 - [ ] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
@@ -84,6 +84,20 @@ Update this file after every completed feature. Any AI agent reading this should
   - **Multi-provider AI client (Anthropic + OpenRouter).** User's initial `.env.local` value under the `OPENROUTER_API_KEY` name was actually an Anthropic key (`sk-ant-...`), and wrapped in literal single quotes that Next.js does not strip — corrupting the Bearer header. Rather than just renaming the var, extended to genuinely support both providers per user request: added `lib/anthropic.ts` (mirrors `lib/openrouter.ts`'s client-factory shape) and `lib/ai-extraction.ts` exporting `extractStructuredData()` — a provider-agnostic function `actions/profile.ts` calls instead of a provider SDK directly. Selection is presence-based (checked once per call, no runtime failover): Anthropic first via forced tool-use (`tool_choice: {type: "tool", ...}`, `claude-sonnet-5`, since Anthropic has no `json_schema` response-format equivalent), OpenRouter as fallback (`response_format: json_schema`). Documented in `code-standards.md` so future AI features reuse this instead of hardcoding a provider. Added `ANTHROPIC_API_KEY` to the env var table.
   - **Free-tier model selection + rate-limit fallback.** User's Anthropic key turned out to have no funded credits (a real account-billing state, not a bug); user then supplied a genuine OpenRouter key and asked to use a free-tier model. Queried OpenRouter's `/models` endpoint directly to find free (`:free` suffix) models that actually support `structured_outputs`/`response_format` (most don't). `OPENROUTER_MODELS` in `lib/ai-extraction.ts` now tries `z-ai/glm-5.2:free` → `nvidia/nemotron-3-super-120b-a12b:free` → `dots-studio/dots-3-note-preview:free` in order, catching `429` (`isRateLimitError`, checks the OpenAI SDK's `APIError.status`) and falling through to the next model — free models share a rate-limited upstream pool and individually 429 under load. Verified working live via server log: a real extraction request succeeded (19.3s, consistent with at least one fallback attempt) and produced correct extracted data that flowed into a subsequent `saveProfile` call.
   - Known minor gap: the per-model retry loop doesn't log which model actually served a successful request — fine for now, would help future debugging of free-model reliability.
+- **08 Resume PDF Generation from Profile — code-complete (tsc/eslint/`next build` all clean), pending live browser QA.** Went through a full `/architect` session before building. User added a real resume layout to follow — `public/2025-template_bullet.docx` (Harvard OCS-style bullet-point template) — inspected by unzipping the `.docx` and reading `word/document.xml` directly (no `pandoc`/LibreOffice available in this environment). Layout: centered name/contact header; bold-centered section headers with a rule beneath (Education, Experience, Leadership & Activities, Skills & Interests); per-entry rows with org/role left-aligned and location/date right-aligned on the same line; bullets beneath each Experience entry (action-verb-led, quantified, no personal pronouns, phrase not sentence). Our data has no source for Leadership & Activities or for Language/Laboratory/Interests sub-lines — those are omitted entirely rather than rendered empty.
+  - Reused `lib/ai-extraction.ts`'s `extractStructuredData()` (Feature 07's provider-agnostic Anthropic/OpenRouter abstraction) rather than hardcoding a provider — no new AI client code needed.
+  - Added `lib/resume-generation-schema.ts`: JSON schema + system prompt for AI-polished `workExperience` bullets and a deduped `skillsSummary`, mapping 1:1 onto the profile's existing `work_experience` array (AI rephrases per role, never adds/drops/merges roles). No `professionalSummary` field — the template has no such section.
+  - Added `components/resume/ResumePdfDocument.tsx` — `@react-pdf/renderer` (new dependency) document component reproducing the template's structure exactly (Helvetica as the closest React-PDF base-14 font to the template's Calibri, since React-PDF doesn't read system fonts without bundling one).
+  - Added `POST /api/resume/generate` (`app/api/resume/generate/route.tsx` — `.tsx` because the route constructs JSX; a small `buildResumeDocument()` helper is kept outside the request handler purely to satisfy the `react-hooks/error-boundaries` lint rule, which otherwise flags any JSX inside a function with a try/catch even though this is server-side PDF rendering, not React DOM). Guards: 401 if unauthenticated, 503 if no AI provider configured, 400 if profile isn't `is_complete` or is missing name/title/work experience. Uploads the rendered buffer to the same `resumes/{user_id}/resume.pdf` key Feature 06's manual upload uses, `upsert`-style via InsForge's `upload()` (wraps the `Buffer` in a `Blob` — InsForge's storage SDK only accepts `File | Blob`, not a raw Node `Buffer`).
+  - **Deliberate overwrite behavior**: generating replaces whatever PDF currently lives at `resumes/{user_id}/resume.pdf`, including a manually-uploaded one — same one-active-resume-per-user convention as Feature 06, not a new decision. UI-side, `ResumeUpload.tsx`'s "Generate Resume from Profile" button now: is disabled with a tooltip until `is_complete` is true; shows a `window.confirm` warning before overwriting an existing resume; shows a loading state; fires `resume_generated` (10th PostHog event, `{ hadExistingResume }`) on success. `ProfileEditor.tsx` passes `profileData?.is_complete` down and reuses its existing `handleUploaded` callback for the generated URL too, since both cases are "the resume URL changed."
+  - Not yet done: a live end-to-end browser test (real AI call → PDF render → storage upload → DB update) — needs an authenticated session via real Google/GitHub OAuth, which isn't automatable in this environment. `curl -X POST /api/resume/generate` unauthenticated correctly returns 401; `next build` includes the route in the manifest. Verify manually, then flip `[~]` to `[x]`.
+- **09 Find Jobs Page — Full UI, complete.** Went through a full `/architect` session first. Per build-plan scope, this is UI-only with mock data — no DB reads, no API calls, filter/sort/pagination all inert (wired for real in Features 10/11).
+  - Added `components/find-jobs/SearchControls.tsx` (Job Title/Location inputs + Find Jobs button + static green success banner) and `components/find-jobs/JobsTable.tsx` (filter bar + table + pagination), plus route `app/find-jobs/page.tsx` — a plain server component (no session/DB fetch, gated entirely by the existing `proxy.ts` matcher) rendering `Navbar`, the two new components, and `Footer`, mirroring `app/profile/page.tsx`'s shell.
+  - **No SOURCE column** — build-plan text lists one (COMPANY/ROLE/MATCH SCORE/SALARY EST./SOURCE/DATE FOUND) but `context/designs/find-jobs.png` doesn't show it; followed the image since no second source value exists until Feature 12/13's URL-based flow.
+  - **Fully static, matching Feature 05's precedent** — banner and table are always rendered with hardcoded mock values (6 rows matching the design: Vercel/Stripe/Linear/Notion/OpenAI/Figma), Find Jobs button has no `onClick` handler. Mock job rows typed as a local `MockJob[]` shaped ahead of Feature 10's `jobs` table schema.
+  - Match score bar uses its own color scale (green ≥90%, blue 80–89%, orange <90%) tuned to match the design mock's exact color assignments — deliberately not reusing `ProgressRing`'s scale, which is calibrated for profile-completion percentages, not match scores.
+  - Extended the shared `Input`/`Select` primitives: added an optional `icon` prop (leading icon, auto `pl-9`) for the search-icon-prefixed fields, and made both skip rendering `FieldLabel`/`id` generation when `label` is an empty string, so the unlabeled filter/sort dropdowns don't collide on id or show empty label chrome. Verified `tsc`/`eslint` clean project-wide after this change since it touches shared components.
+  - Verified visually against `context/designs/find-jobs.png` via a temporary, fully-reverted `proxy.ts` edit (unguarding `/find-jobs` for one Playwright screenshot, same approach Feature 05 used) — `proxy.ts` itself has no net change. Layout, spacing, colors, and copy match the design closely.
 
 ---
 

@@ -1,25 +1,39 @@
 "use client";
 
 import { useState, useRef, ChangeEvent, DragEvent } from "react";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, ExternalLink, Sparkles } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, ExternalLink, Sparkles, Trash2 } from "lucide-react";
 import posthog from "posthog-js";
 import { FormButton } from "@/components/ui/form-button";
-import { uploadResume, extractProfileFromResume } from "@/actions/profile";
+import { uploadResume, deleteResume, extractProfileFromResume } from "@/actions/profile";
 import { countPopulatedFields, type ExtractedProfileData } from "@/lib/resume-extraction-schema";
 
 type Props = {
   currentResumeUrl?: string | null;
+  isProfileComplete?: boolean;
   onExtracted?: (data: ExtractedProfileData) => void;
   onUploaded?: (url: string) => void;
+  onGenerated?: (url: string) => void;
+  onDeleted?: () => void;
 };
 
-export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Props) {
-  const [resumeUrl, setResumeUrl] = useState<string | null>(currentResumeUrl || null);
+export function ResumeUpload({
+  currentResumeUrl,
+  isProfileComplete = false,
+  onExtracted,
+  onUploaded,
+  onGenerated,
+  onDeleted,
+}: Props) {
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const resumeUrl = uploadedUrl || currentResumeUrl || null;
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -42,7 +56,7 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
     try {
       const res = await uploadResume(formData);
       if (res.success && res.url) {
-        setResumeUrl(res.url);
+        setUploadedUrl(res.url);
         onUploaded?.(res.url);
       } else {
         setErrorMessage(res.error || "Failed to upload resume.");
@@ -81,6 +95,37 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
     }
   };
 
+  const handleGenerate = async () => {
+    setGenerateError(null);
+
+    if (resumeUrl) {
+      const confirmed = window.confirm(
+        "Generating a new resume will replace your current resume file. Continue?"
+      );
+      if (!confirmed) return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const res = await fetch("/api/resume/generate", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success && data.url) {
+        setUploadedUrl(data.url);
+        onGenerated?.(data.url);
+        posthog.capture("resume_generated", {
+          hadExistingResume: Boolean(data.hadExistingResume),
+        });
+      } else {
+        setGenerateError(data.error || "Failed to generate resume.");
+      }
+    } catch (err) {
+      console.error("Resume generation error:", err);
+      setGenerateError("An unexpected error occurred while generating your resume.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleExtract = async () => {
     setExtractError(null);
     setIsExtracting(true);
@@ -99,6 +144,30 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
       setExtractError("An unexpected error occurred while extracting your resume.");
     } finally {
       setIsExtracting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to remove your resume? This will delete the file from storage."
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    setErrorMessage(null);
+    try {
+      const res = await deleteResume();
+      if (res.success) {
+        setUploadedUrl(null);
+        onDeleted?.();
+      } else {
+        setErrorMessage(res.error || "Failed to remove resume.");
+      }
+    } catch (err) {
+      console.error("Resume delete error:", err);
+      setErrorMessage("An unexpected error occurred while deleting resume.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -149,7 +218,7 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
           <div className="flex items-center gap-2">
             <FormButton
               variant="primary"
-              disabled={isUploading || isExtracting}
+              disabled={isUploading || isExtracting || isDeleting}
               icon={isExtracting ? undefined : <Sparkles className="h-4 w-4" />}
               onClick={handleExtract}
             >
@@ -164,7 +233,7 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
             </FormButton>
             <FormButton
               variant="secondary"
-              disabled={isUploading || isExtracting}
+              disabled={isUploading || isExtracting || isDeleting}
               onClick={() => fileInputRef.current?.click()}
             >
               {isUploading ? (
@@ -176,6 +245,20 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
                 "Replace Resume"
               )}
             </FormButton>
+            <button
+              type="button"
+              title="Remove resume"
+              aria-label="Remove resume"
+              disabled={isUploading || isExtracting || isDeleting}
+              onClick={handleDelete}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-text-muted transition-colors hover:border-error/40 hover:bg-error/10 hover:text-error focus:outline-none focus:ring-2 focus:ring-error/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDeleting ? (
+                <Loader2 className="h-4 w-4 animate-spin text-error" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+            </button>
           </div>
         </div>
       ) : (
@@ -236,12 +319,36 @@ export function ResumeUpload({ currentResumeUrl, onExtracted, onUploaded }: Prop
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between border-t border-border-light pt-4">
-        <p className="text-sm text-text-secondary">Need a fresh document based on the fields below?</p>
-        <FormButton variant="primary" icon={<FileText className="h-4 w-4" />}>
-          Generate Resume from Profile
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-border-light pt-4">
+        <p className="text-sm text-text-secondary">
+          {isProfileComplete
+            ? "Need a fresh document based on the fields below?"
+            : "Complete your profile below to generate a resume from it."}
+        </p>
+        <FormButton
+          variant="primary"
+          icon={isGenerating ? undefined : <FileText className="h-4 w-4" />}
+          disabled={!isProfileComplete || isGenerating}
+          title={isProfileComplete ? undefined : "Complete your profile first"}
+          onClick={handleGenerate}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            "Generate Resume from Profile"
+          )}
         </FormButton>
       </div>
+
+      {generateError && (
+        <div className="mt-3 flex items-center gap-2 text-xs font-medium text-error">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{generateError}</span>
+        </div>
+      )}
     </div>
   );
 }

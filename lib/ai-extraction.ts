@@ -21,22 +21,19 @@ type NamedJsonSchema = {
 // (response_format: json_schema), used as the fallback path while an
 // Anthropic key isn't funded. Free models share a rate-limited upstream
 // pool, so a single model can return 429s under load — tried in order,
-// falling through to the next on a rate limit. Swap to a paid model (or
-// make this configurable) once real usage volume needs it.
+// falling through to the next on a rate limit. Ordered by observed
+// reliability/latency, not just capability: z-ai/glm-5.2:free is frequently
+// congested (its 429s alone can take 10+ seconds to arrive), which risks
+// exhausting the request's time budget before a later model in the list
+// ever gets a turn — so it's tried last, not first. Swap to a paid model
+// (or make this configurable) once real usage volume needs it.
 const OPENROUTER_MODELS = [
-  "z-ai/glm-5.2:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "dots-studio/dots-3-note-preview:free",
+  "z-ai/glm-5.2:free",
 ];
 
-function isRateLimitError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    (error as { status?: number }).status === 429
-  );
-}
+const PER_MODEL_TIMEOUT_MS = 20_000;
 
 // Provider-agnostic structured extraction: picks Anthropic (if configured)
 // over OpenRouter (fallback), and returns the same parsed JSON shape either
@@ -82,30 +79,47 @@ export async function extractStructuredData<T>(
     let lastError: unknown;
     for (const model of OPENROUTER_MODELS) {
       try {
-        const completion = await client.chat.completions.create({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: jsonSchema,
+        const completion = await client.chat.completions.create(
+          {
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: text },
+            ],
+            response_format: {
+              type: "json_schema",
+              json_schema: jsonSchema,
+            },
           },
-        });
+          // Caps how long a single congested free model can hold up the
+          // whole retry chain — a slow model (observed: 10+ seconds just to
+          // return a 429 under load) can otherwise burn through the route's
+          // entire time budget before a later, working model gets a turn.
+          // maxRetries: 0 because our own model-to-model loop is already
+          // the retry strategy — letting the SDK also retry the same
+          // congested model internally (default: 2 retries) would multiply
+          // the worst-case wait instead of moving on to the next model.
+          { timeout: PER_MODEL_TIMEOUT_MS, maxRetries: 0 }
+        );
 
-        const raw = completion.choices[0]?.message?.content;
+        // OpenRouter can return a 200-range response whose body doesn't
+        // actually match the chat-completion shape (e.g. an error object
+        // with no `choices` at all) — guard the whole chain with optional
+        // chaining rather than assuming `completion.choices` exists, so a
+        // malformed response throws our own clean "empty response" error
+        // instead of an unhandled TypeError crashing the request.
+        const raw = completion?.choices?.[0]?.message?.content;
         if (!raw) {
-          throw new Error("Empty response from model");
+          throw new Error("Empty or malformed response from model");
         }
         return JSON.parse(raw) as T;
       } catch (error) {
+        // Any failure on one free model — rate-limited, malformed response,
+        // a JSON.parse failure, or a hung/slow request — falls through to
+        // the next model in the list rather than aborting the whole chain.
+        // Only the last model's failure actually propagates (below).
         lastError = error;
-        if (isRateLimitError(error)) {
-          // This free model is rate-limited upstream — try the next one.
-          continue;
-        }
-        throw error;
+        continue;
       }
     }
     throw lastError;

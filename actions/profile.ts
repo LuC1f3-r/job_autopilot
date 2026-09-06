@@ -116,6 +116,63 @@ export async function uploadResume(formData: FormData): Promise<{
   }
 }
 
+export async function deleteResume(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const insforge = await createInsforgeServer();
+    const objectKey = `${user.id}/resume.pdf`;
+
+    // 1. Remove from storage
+    const { error: storageError } = await insforge.storage
+      .from("resumes")
+      .remove(objectKey);
+
+    if (storageError) {
+      console.error("[actions/profile:deleteResume] storage delete error:", storageError);
+    }
+
+    // 2. Fetch existing profile and update resume_pdf_url to null
+    const { data: existingRows } = await insforge.database
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id);
+
+    const existing = (existingRows?.[0] as Profile) || null;
+    if (existing) {
+      const completion = calculateProfileCompletion({
+        ...existing,
+        resume_pdf_url: null,
+      });
+
+      const { error: dbError } = await insforge.database
+        .from("profiles")
+        .update({
+          resume_pdf_url: null,
+          is_complete: completion.isComplete,
+        })
+        .eq("id", user.id);
+
+      if (dbError) {
+        console.error("[actions/profile:deleteResume] db error:", dbError);
+        return { success: false, error: "Failed to update profile after deleting resume" };
+      }
+    }
+
+    revalidatePath("/profile");
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/profile:deleteResume]", error);
+    return { success: false, error: "Failed to delete resume" };
+  }
+}
+
 export async function saveProfile(formData: ProfileFormData): Promise<{
   success: boolean;
   error?: string;
@@ -246,20 +303,28 @@ export async function extractProfileFromResume(): Promise<{
       .eq("id", user.id);
     const existing = (existingRows?.[0] as Profile) || null;
 
-    if (!existing?.resume_pdf_url) {
-      return { success: false, error: "Upload a resume before extracting." };
-    }
-
+    const objectKey = `${user.id}/resume.pdf`;
     const { data: blob, error: downloadError } = await insforge.storage
       .from("resumes")
-      .download(`${user.id}/resume.pdf`);
+      .download(objectKey);
 
-    if (downloadError || !blob) {
+    if (downloadError || !blob || blob.size === 0) {
       console.error(
         "[actions/profile:extractProfileFromResume] storage download error:",
         downloadError
       );
-      return { success: false, error: "Could not load your uploaded resume." };
+      return { success: false, error: "Upload a resume before extracting." };
+    }
+
+    if (!existing?.resume_pdf_url) {
+      const publicUrlRes = insforge.storage.from("resumes").getPublicUrl(objectKey);
+      const resumeUrl =
+        publicUrlRes?.data?.publicUrl ||
+        `${process.env.NEXT_PUBLIC_INSFORGE_URL}/api/storage/buckets/resumes/objects/${encodeURIComponent(objectKey)}`;
+      await insforge.database
+        .from("profiles")
+        .update({ resume_pdf_url: resumeUrl })
+        .eq("id", user.id);
     }
 
     const buffer = Buffer.from(await blob.arrayBuffer());

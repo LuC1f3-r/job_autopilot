@@ -10,11 +10,11 @@ type Props = SelectHTMLAttributes<HTMLSelectElement> & {
 };
 
 export function Select({ label, options, id, className = "", ...props }: Props) {
-  const selectId = id ?? label.toLowerCase().replace(/\s+/g, "-");
+  const selectId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
 
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      {label && <FieldLabel>{label}</FieldLabel>}
       <div className="relative">
         <select
           id={selectId}
