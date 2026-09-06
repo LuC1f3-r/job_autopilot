@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 09 Find Jobs Page — Full UI (mock data, no logic)
-**Next:** 10 Adzuna Job Discovery. Feature 08 (Resume PDF Generation) still needs a live browser QA pass to flip from `[~]` to `[x]` — see note below. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Last completed:** 10 Adzuna Job Discovery
+**Next:** 11 Filter + Sort + Pagination. Feature 08 (Resume PDF Generation) still needs a live browser QA pass to flip from `[~]` to `[x]` — see note below. 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -31,7 +31,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 3 — Find Jobs Page
 
 - [x] 09 Find Jobs Page — Full UI
-- [ ] 10 Adzuna Job Discovery
+- [x] 10 Adzuna Job Discovery
 - [ ] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
@@ -98,6 +98,13 @@ Update this file after every completed feature. Any AI agent reading this should
   - Match score bar uses its own color scale (green ≥90%, blue 80–89%, orange <90%) tuned to match the design mock's exact color assignments — deliberately not reusing `ProgressRing`'s scale, which is calibrated for profile-completion percentages, not match scores.
   - Extended the shared `Input`/`Select` primitives: added an optional `icon` prop (leading icon, auto `pl-9`) for the search-icon-prefixed fields, and made both skip rendering `FieldLabel`/`id` generation when `label` is an empty string, so the unlabeled filter/sort dropdowns don't collide on id or show empty label chrome. Verified `tsc`/`eslint` clean project-wide after this change since it touches shared components.
   - Verified visually against `context/designs/find-jobs.png` via a temporary, fully-reverted `proxy.ts` edit (unguarding `/find-jobs` for one Playwright screenshot, same approach Feature 05 used) — `proxy.ts` itself has no net change. Layout, spacing, colors, and copy match the design closely.
+- **10 Adzuna Job Discovery — complete, verified end-to-end.**
+  - **Adzuna Integration**: Built `lib/adzuna.ts` implementing `searchJobs()` against the Adzuna API with country auto-detection (`detectCountry`) defaulting to `'us'`.
+  - **Server Action + Route**: Added Server Action `findJobs(jobTitle, location)` in `actions/jobs.ts` and thin API wrapper `app/api/agent/find/route.ts` for spec parity. `findJobs` enforces authentication, checks profile completion, inserts `agent_runs` tracking rows, scores jobs against the user's profile concurrently with `Promise.allSettled`, inserts into `jobs`, logs failures to `agent_logs`, updates the run record with counts, and captures PostHog `job_search_started` and `job_found` events via `lib/posthog-server.ts`.
+  - **Multi-Tier AI Fallback**: Extended `lib/ai-extraction.ts` with a resilient 3-tier cascade: Anthropic Claude Sonnet -> OpenRouter free models -> TinyFish Web AI Agent (`extractWithTinyFish` using schema sanitizer `cleanSchemaForTinyFish`). Added unified `isAnyAiConfigured()` check used across `actions/jobs.ts`, `actions/profile.ts`, and `app/api/resume/generate/route.tsx`.
+  - **Client UI Wiring**: Converted `components/find-jobs/SearchControls.tsx` to a `"use client"` interactive component managing search inputs, loading spinners, and result feedback banners. Wired `app/find-jobs/page.tsx` and `components/find-jobs/JobsTable.tsx` to fetch real jobs and runs from the InsForge database.
+  - **Environment & Cleanup**: Corrected `ADZUNA_APP_KEY`, added `TINYFISH_API_KEY`, removed temporary Playwright MCP logs and stray files, and fixed `.gitignore` to track `.env.example` while safely ignoring secrets.
+
 
 ---
 

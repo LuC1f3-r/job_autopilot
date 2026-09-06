@@ -3,9 +3,11 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { revalidatePath } from "next/cache";
 import { createInsforgeServer, getSessionUser } from "@/lib/insforge-server";
 import { Profile } from "@/lib/profile-types";
-import { isAnthropicConfigured } from "@/lib/anthropic";
-import { isOpenRouterConfigured } from "@/lib/openrouter";
-import { extractStructuredData, NoAiProviderConfiguredError } from "@/lib/ai-extraction";
+import {
+  extractStructuredData,
+  isAnyAiConfigured,
+  NoAiProviderConfiguredError,
+} from "@/lib/ai-extraction";
 import {
   GeneratedResumeContent,
   RESUME_GENERATION_JSON_SCHEMA,
@@ -37,7 +39,7 @@ export async function POST() {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    if (!isAnthropicConfigured() && !isOpenRouterConfigured()) {
+    if (!isAnyAiConfigured()) {
       return NextResponse.json(
         { error: "AI generation is not configured yet. Please try again later." },
         { status: 503 }

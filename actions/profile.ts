@@ -9,9 +9,11 @@ import {
   ProfileFormData,
   calculateProfileCompletion,
 } from "@/lib/profile-types";
-import { isAnthropicConfigured } from "@/lib/anthropic";
-import { isOpenRouterConfigured } from "@/lib/openrouter";
-import { extractStructuredData, NoAiProviderConfiguredError } from "@/lib/ai-extraction";
+import {
+  extractStructuredData,
+  isAnyAiConfigured,
+  NoAiProviderConfiguredError,
+} from "@/lib/ai-extraction";
 import {
   ExtractedProfileData,
   RESUME_EXTRACTION_JSON_SCHEMA,
@@ -288,7 +290,7 @@ export async function extractProfileFromResume(): Promise<{
       return { success: false, error: "Not authenticated" };
     }
 
-    if (!isAnthropicConfigured() && !isOpenRouterConfigured()) {
+    if (!isAnyAiConfigured()) {
       return {
         success: false,
         error: "AI extraction is not configured yet. Please try again later.",

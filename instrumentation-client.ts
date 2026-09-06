@@ -15,13 +15,15 @@ if (!posthogKey || !posthogHost) {
   }
 } else {
   posthog.init(posthogKey, {
-    api_host: posthogHost,
+    api_host: "/ingest",
+    ui_host: posthogHost,
     defaults: "2026-01-30",
     // Disabled: its remote script fetch fails in some network environments
     // (corporate DNS/CDN blocking) and logs a console.error that Next.js's
     // Dev Tools panel surfaces as a false-alarm "error" overlay. Core
     // tracking (pageviews, identify, capture) is unaffected either way.
     capture_exceptions: false,
+    disable_surveys: true,
     debug: process.env.NODE_ENV === "development",
   });
 }
