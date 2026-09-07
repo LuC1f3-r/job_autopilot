@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 3 — Find Jobs Page
-**Last completed:** 10 Adzuna Job Discovery
-**Next:** 11 Filter + Sort + Pagination. Feature 08 (Resume PDF Generation) still needs a live browser QA pass to flip from `[~]` to `[x]` — see note below. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Phase:** Phase 4 — Job Details Page
+**Last completed:** 12 Job Details Page — Full UI (confirmed working by user, including the Job Description truncation fix)
+**Next:** 13 Company Research Agent. 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -26,17 +26,17 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
 - [x] 07 AI Profile Extraction from Resume
-- [~] 08 Resume PDF Generation from Profile (code-complete, tsc/eslint/build clean; pending live browser QA)
+- [x] 08 Resume PDF Generation from Profile (confirmed working end-to-end via live browser QA — real AI call → PDF render → storage upload)
 
 ### Phase 3 — Find Jobs Page
 
 - [x] 09 Find Jobs Page — Full UI
 - [x] 10 Adzuna Job Discovery
-- [ ] 11 Filter + Sort + Pagination
+- [x] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
 
-- [ ] 12 Job Details Page — Full UI
+- [~] 12 Job Details Page — Full UI (code-complete, tsc/eslint/build clean; pending user visual QA against design)
 - [ ] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
@@ -90,7 +90,7 @@ Update this file after every completed feature. Any AI agent reading this should
   - Added `components/resume/ResumePdfDocument.tsx` — `@react-pdf/renderer` (new dependency) document component reproducing the template's structure exactly (Helvetica as the closest React-PDF base-14 font to the template's Calibri, since React-PDF doesn't read system fonts without bundling one).
   - Added `POST /api/resume/generate` (`app/api/resume/generate/route.tsx` — `.tsx` because the route constructs JSX; a small `buildResumeDocument()` helper is kept outside the request handler purely to satisfy the `react-hooks/error-boundaries` lint rule, which otherwise flags any JSX inside a function with a try/catch even though this is server-side PDF rendering, not React DOM). Guards: 401 if unauthenticated, 503 if no AI provider configured, 400 if profile isn't `is_complete` or is missing name/title/work experience. Uploads the rendered buffer to the same `resumes/{user_id}/resume.pdf` key Feature 06's manual upload uses, `upsert`-style via InsForge's `upload()` (wraps the `Buffer` in a `Blob` — InsForge's storage SDK only accepts `File | Blob`, not a raw Node `Buffer`).
   - **Deliberate overwrite behavior**: generating replaces whatever PDF currently lives at `resumes/{user_id}/resume.pdf`, including a manually-uploaded one — same one-active-resume-per-user convention as Feature 06, not a new decision. UI-side, `ResumeUpload.tsx`'s "Generate Resume from Profile" button now: is disabled with a tooltip until `is_complete` is true; shows a `window.confirm` warning before overwriting an existing resume; shows a loading state; fires `resume_generated` (10th PostHog event, `{ hadExistingResume }`) on success. `ProfileEditor.tsx` passes `profileData?.is_complete` down and reuses its existing `handleUploaded` callback for the generated URL too, since both cases are "the resume URL changed."
-  - Not yet done: a live end-to-end browser test (real AI call → PDF render → storage upload → DB update) — needs an authenticated session via real Google/GitHub OAuth, which isn't automatable in this environment. `curl -X POST /api/resume/generate` unauthenticated correctly returns 401; `next build` includes the route in the manifest. Verify manually, then flip `[~]` to `[x]`.
+  - **Live QA confirmed (Sep 7, 2026)**: user manually exercised "Generate Resume from Profile" on the `kamikaze7173@gmail.com` account (real Google OAuth session) — real AI call → PDF render → storage upload → DB update all worked correctly end-to-end. Feature flipped from `[~]` to `[x]`.
 - **09 Find Jobs Page — Full UI, complete.** Went through a full `/architect` session first. Per build-plan scope, this is UI-only with mock data — no DB reads, no API calls, filter/sort/pagination all inert (wired for real in Features 10/11).
   - Added `components/find-jobs/SearchControls.tsx` (Job Title/Location inputs + Find Jobs button + static green success banner) and `components/find-jobs/JobsTable.tsx` (filter bar + table + pagination), plus route `app/find-jobs/page.tsx` — a plain server component (no session/DB fetch, gated entirely by the existing `proxy.ts` matcher) rendering `Navbar`, the two new components, and `Footer`, mirroring `app/profile/page.tsx`'s shell.
   - **No SOURCE column** — build-plan text lists one (COMPANY/ROLE/MATCH SCORE/SALARY EST./SOURCE/DATE FOUND) but `context/designs/find-jobs.png` doesn't show it; followed the image since no second source value exists until Feature 12/13's URL-based flow.
@@ -104,6 +104,18 @@ Update this file after every completed feature. Any AI agent reading this should
   - **Multi-Tier AI Fallback**: Extended `lib/ai-extraction.ts` with a resilient 3-tier cascade: Anthropic Claude Sonnet -> OpenRouter free models -> TinyFish Web AI Agent (`extractWithTinyFish` using schema sanitizer `cleanSchemaForTinyFish`). Added unified `isAnyAiConfigured()` check used across `actions/jobs.ts`, `actions/profile.ts`, and `app/api/resume/generate/route.tsx`.
   - **Client UI Wiring**: Converted `components/find-jobs/SearchControls.tsx` to a `"use client"` interactive component managing search inputs, loading spinners, and result feedback banners. Wired `app/find-jobs/page.tsx` and `components/find-jobs/JobsTable.tsx` to fetch real jobs and runs from the InsForge database.
   - **Environment & Cleanup**: Corrected `ADZUNA_APP_KEY`, added `TINYFISH_API_KEY`, removed temporary Playwright MCP logs and stray files, and fixed `.gitignore` to track `.env.example` while safely ignoring secrets.
+- **11 Filter + Sort + Pagination — complete.** All filter/sort/search/pagination state now lives in the URL's search params (`q`, `match`, `sort`, `page`) rather than component state — bookmarkable/shareable, and survives a refresh.
+  - `app/find-jobs/page.tsx` reads `searchParams` (Next 16 Promise convention), validates each param against a known set (`SORT_COLUMNS`, `MatchFilter`) falling back to sane defaults (`"Match Score"` sort, `"All Matches"`, page 1) if invalid/missing, then builds one InsForge/PostgREST query: `.or('company.ilike.%q%,title.ilike.%q%')` for text search, `.gte('match_score', MATCH_THRESHOLD)` / `.lt(...)` for High/Low Match (reusing the existing `MATCH_THRESHOLD` constant from `lib/utils.ts`, not a new hardcoded 70), `.order(column, { ascending })` from a `SORT_COLUMNS` lookup table, and `.range(from, to)` for pagination — `JOBS_PER_PAGE = 20` per build-plan. `select('*', { count: 'exact' })` returns the real total for the "Showing X to Y of Z" copy and page-number buttons, replacing Feature 10's `jobs.length`-based placeholder math.
+  - `components/find-jobs/JobsTable.tsx` converted to a Client Component (`useRouter`/`usePathname`/`useSearchParams`) that only ever pushes new URL search params — it never fetches directly. Text search commits on submit (Enter or a wrapping `<form>`), match/sort dropdowns commit on change, all reset `page` to 1 on change. Page-number buttons render one button per real page (`Math.ceil(totalCount / perPage)`) instead of the old hardcoded single "1" button; Previous/Next disable at the real bounds. `SortLabel`/`MatchFilter` types and the `SORT_COLUMNS` map are exported from `page.tsx` and imported by `JobsTable` so both stay in sync with one source of truth.
+  - Empty state now distinguishes "no jobs yet" (first-ever search) from "no jobs match your filters" (a search/filter combination returned nothing) based on whether `query`/`match` are active.
+  - Verified with `tsc --noEmit`, `eslint`, and `next build` — all clean, `/find-jobs` still builds as a dynamic route.
+- **12 Job Details Page — Full UI, code-complete pending user visual QA.** Per build-plan scope, job info/match/skills/description sections use real data (already populated by Feature 10); Company Research renders empty-state-only (Feature 13 wires the agent).
+  - New route `app/find-jobs/[jobId]/page.tsx` — server component, fetches the job row by id scoped to `user_id` (`.eq("id", jobId).eq("user_id", user.id).single()`), `notFound()` on missing session or no matching row (also blocks viewing another user's job by guessing an id).
+  - New `components/job-details/JobDetails.tsx` renders: Back to Jobs link, header card (company icon placeholder, title, company + match score badge, "View Job Post" linking `source_url`), a 4-up info card row (Salary Est./Location/Job Type/Date Found), AI Match Reasoning card, Required Skills vs Your Profile (matched skills as green `bg-success-lightest` badges with a `Check` icon, gap skills as `bg-accent-muted`/`text-accent` badges with an `X` icon — followed the design image's purple gap-skill treatment over the build-plan text's literal "red/orange", same precedent as Feature 09's design-over-text call), Job Description card, Company Research card (empty state: `Building2` icon, "No research yet", enabled-but-inert "Research Company" button — matches the design's visual state even though Feature 13 hasn't wired it, consistent with Features 09/10's "visually live, logically inert until its feature lands" pattern), and a full-width "Apply Now at {company}" button linking `external_apply_url`. Every section with no backing data (`match_reason`, skills arrays, `about_role`) is conditionally omitted rather than rendered empty.
+  - Extracted `formatRelativeDate` out of `JobsTable.tsx` into `lib/format-date.ts` — Date Found on this page needed the identical relative-time formatting, so this became the second consumer.
+  - `JobsTable.tsx`'s Role column now links internally to `/find-jobs/{job.id}` instead of opening `source_url` directly — the details page itself owns the external "View Job Post" link and the "Apply Now" CTA.
+  - Verified with `tsc --noEmit`, `eslint`, and `next build` — all clean, `/find-jobs/[jobId]` registered as a new dynamic route. Visual comparison against `context/designs/job-details.png` deferred to the user (automated browser session was logged out) — pending confirmation.
+  - **Post-review fix (Job Description truncation)**: `/review` flagged the Job Description paragraph cutting off mid-sentence. Root-caused via `context/library-docs.md` — this is expected, not a bug: Adzuna's free-tier API only ever returns a truncated snippet (`about_role: job.description, // Adzuna returns snippet — used as description`), and the reference design shows the identical mid-sentence cutoff. No fuller text exists anywhere to render. Closed the resulting UX dead-end by adding a "Read full description on {company}'s site →" link under the paragraph, pointing at `source_url` (Adzuna's redirect to the real employer posting) whenever it's present — gives the user a direct escape hatch right where the text cuts off, instead of relying on the header's separate "View Job Post" button.
 
 
 ---
