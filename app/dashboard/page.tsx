@@ -10,39 +10,60 @@ import {
   calculateDashboardStats,
   DashboardJob,
 } from "@/lib/dashboard-stats";
+import {
+  buildRecentActivities,
+  AgentRunRow,
+  ActivityItem,
+} from "@/lib/dashboard-activity";
 
 /**
- * Feature 15 — Stats bar wired to real InsForge DB queries for the signed-in user:
- * - Total Jobs Found: COUNT of jobs for current user
- * - Avg. Match Rate: AVG of match_score across all user jobs
- * - Companies Researched: COUNT of jobs with company_research IS NOT NULL (distinct companies)
- * - Jobs This Week: COUNT of jobs found in the last 7 days
+ * Feature 15 & 16 — Dashboard page with real InsForge DB data:
+ * - Feature 15: Stats bar (Total Jobs, Avg Match Rate, Companies Researched, Jobs This Week)
+ * - Feature 16: Recent Activity (reverse-chronological feed of job searches and company research)
  *
- * Recent Activity and Charts remain mock data matching the design (Features 16 & 17).
+ * Feature 17 will wire the three analytics charts to real PostHog data.
  */
 export default async function DashboardPage() {
   const user = await getSessionUser();
   let jobs: DashboardJob[] = [];
+  let runs: AgentRunRow[] = [];
 
   if (user) {
     try {
       const insforge = await createInsforgeServer();
-      const { data, error } = await insforge.database
-        .from("jobs")
-        .select("id, company, match_score, found_at, company_research")
-        .eq("user_id", user.id);
+      const [jobsRes, runsRes] = await Promise.all([
+        insforge.database
+          .from("jobs")
+          .select("id, company, match_score, found_at, company_research")
+          .eq("user_id", user.id),
+        insforge.database
+          .from("agent_runs")
+          .select("id, status, job_title_searched, jobs_found, completed_at, started_at")
+          .eq("user_id", user.id)
+          .eq("status", "completed")
+          .not("job_title_searched", "is", null)
+          .order("completed_at", { ascending: false })
+          .limit(10),
+      ]);
 
-      if (error) {
-        console.error("[dashboard] Failed to fetch user jobs for stats bar:", error);
-      } else if (data) {
-        jobs = data as DashboardJob[];
+      if (jobsRes.error) {
+        console.error("[dashboard] Failed to fetch user jobs:", jobsRes.error);
+      } else if (jobsRes.data) {
+        jobs = jobsRes.data as DashboardJob[];
+      }
+
+      if (runsRes.error) {
+        console.error("[dashboard] Failed to fetch agent runs:", runsRes.error);
+      } else if (runsRes.data) {
+        runs = runsRes.data as AgentRunRow[];
       }
     } catch (error) {
-      console.error("[dashboard] Unexpected error fetching jobs for stats bar:", error);
+      console.error("[dashboard] Unexpected error fetching dashboard data:", error);
     }
   }
 
   const stats = calculateDashboardStats(jobs);
+  const activities: ActivityItem[] = buildRecentActivities(runs, jobs, 5);
 
   return (
     <>
@@ -74,7 +95,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <RecentActivity />
+          <RecentActivity activities={activities} />
           <CompanyResearchChart />
         </div>
 
