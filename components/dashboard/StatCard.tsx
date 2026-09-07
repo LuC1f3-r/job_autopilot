@@ -17,7 +17,13 @@ export function StatCard({ label, value, delta, caption }: Props) {
       <p className="mt-2 text-3xl font-semibold text-text-primary">{value}</p>
       <div className="mt-3 flex items-center gap-2">
         {delta && (
-          <span className="rounded-md bg-success-lightest px-1.5 py-0.5 text-xs font-medium text-success-foreground">
+          <span
+            className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${
+              delta.startsWith("-")
+                ? "bg-error/10 text-error"
+                : "bg-success-lightest text-success-foreground"
+            }`}
+          >
             {delta}
           </span>
         )}

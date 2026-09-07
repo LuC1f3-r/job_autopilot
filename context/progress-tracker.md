@@ -7,8 +7,8 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 5 — Dashboard (in progress)
-**Last completed:** 14 Dashboard Page — Full UI (code-complete, matches `context/designs/dashboard.png`; build/lint clean; pending live visual QA — needs a logged-in session, see note below)
-**Next:** 15 Stats Bar — Real Data. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Last completed:** 15 Stats Bar — Real Data (code-complete, lint/tsc/build clean, unit-tested). Feature 14 pending live visual QA.
+**Next:** 16 Recent Activity — Real Data. 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -42,7 +42,7 @@ Update this file after every completed feature. Any AI agent reading this should
 ### Phase 5 — Dashboard
 
 - [x] 14 Dashboard Page — Full UI (mock data; pending live visual QA)
-- [ ] 15 Stats Bar — Real Data
+- [x] 15 Stats Bar — Real Data
 - [ ] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
 
@@ -129,6 +129,7 @@ Update this file after every completed feature. Any AI agent reading this should
   - `next.config.ts` gained `serverExternalPackages: ["@browserbasehq/stagehand"]` — Turbopack can't statically trace Stagehand's `new URL("../", import.meta.url)` extension-asset lookup when bundled for the server; excluding it from bundling lets Node's own resolution handle it at runtime (server-only dependency, never imported client-side).
   - `zod` pinned to the exact `4.4.3` Stagehand requires (was previously only a transitive dependency at a different version) so npm dedupes to one copy — Stagehand types `extract()` against its own bundled zod instance, and two different installed zod versions produce structurally incompatible `ZodType`s at the TypeScript level otherwise.
   - **Live QA (real account, real Canva job row, not a mock)**: full real run — 1 homepage + 3 sub-page Stagehand extractions against `canva.com`, all succeeding after the two bug fixes above, followed by real AI synthesis producing a dossier grounded in genuine, current Canva-specific details (Magic Layers/Magic Write/Magic Resize AI tools, the Affinity acquisition, Apps Marketplace integrations with Slack/Salesforce/Shopify/Microsoft Teams) fused with the candidate's actual profile history. Confirmed persisted (not just client state) via a hard page reload rendering the identical saved dossier from the DB. `npm run lint` and `npm run build` both clean throughout.
+- **15 Stats Bar — Real Data wired to InsForge DB.** Query runs server-side in `app/dashboard/page.tsx` via `createInsforgeServer()` scoped to `user_id = user.id`. Pure calculation logic isolated in `lib/dashboard-stats.ts` (`calculateDashboardStats`) to comply with React 19 purity rules (no `Date.now()` during component render) and enable direct unit testing. Computes real counts: Total Jobs Found, Avg. Match Rate (with week-over-week delta and adaptive caption), Companies Researched (distinct researched companies count), and Jobs This Week. `StatCard.tsx` updated to support negative delta indicator styling (`bg-error/10 text-error`) alongside positive styling. All unit tests and `next build` clean.
 
 
 ---
