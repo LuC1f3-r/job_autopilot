@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 4 — Job Details Page (complete)
-**Last completed:** 13 Company Research Agent (confirmed working end-to-end via live browser QA — real Stagehand session + real synthesis, persisted dossier verified on page reload)
-**Next:** Phase 5 — 14 Dashboard Page — Full UI. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Phase:** Phase 5 — Dashboard (in progress)
+**Last completed:** 14 Dashboard Page — Full UI (code-complete, matches `context/designs/dashboard.png`; build/lint clean; pending live visual QA — needs a logged-in session, see note below)
+**Next:** 15 Stats Bar — Real Data. 03 PostHog Initialization is still partially built (see note below) and remains open.
 
 ---
 
@@ -41,7 +41,7 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 5 — Dashboard
 
-- [ ] 14 Dashboard Page — Full UI
+- [x] 14 Dashboard Page — Full UI (mock data; pending live visual QA)
 - [ ] 15 Stats Bar — Real Data
 - [ ] 16 Recent Activity — Real Data
 - [ ] 17 Analytics Charts — PostHog Data
@@ -53,6 +53,8 @@ Update this file after every completed feature. Any AI agent reading this should
 - Homepage CTAs use two hand-picked dark tokens sampled directly from `context/designs/landing-page.png` pixels (`--color-text-slate` for navbar CTA, `--color-text-darker` for Hero/CTA buttons), not the app's purple `--color-accent` primary button from ui-rules.md. The purple primary button stays reserved for in-app actions built in later features.
 - No shadcn/ui CLI init yet — hand-rolled `components/ui/button.tsx` since the homepage only needed link-styled buttons. Real shadcn primitives (inputs, dropdowns, etc.) will be introduced when Feature 05 (Profile form) needs them.
 - Installed `lucide-react` (already an approved dependency) for the small "play" triangle icon in the Get Started buttons.
+- Installed `recharts` (user-requested) for Feature 14's three dashboard charts (bar/bar/area) instead of hand-rolled SVG — first charting dependency in the project. Charts read colors from the app's CSS custom properties (`var(--color-accent)`, etc.) so they stay in sync with `globals.css` tokens rather than hardcoding hex values.
+- Feature 14 ships with fully hardcoded mock data (stat values, 5 activity rows, 7-day bar/line series, 5-bucket match distribution) matching `context/designs/dashboard.png` exactly — Features 15-17 replace each section with real DB/PostHog-backed data one at a time.
 - All homepage CTAs ("Get Started", "Start for free", "Find Your First Match") link to `/login` unconditionally — the logged-in → `/dashboard` branch from build-plan.md needs Feature 02 (Auth) to exist first.
 - `public/images/dashboard-demo.png`, `jobs-lists.png`, `agnet-log.png`, and `user-icon.png` are used as-is (pre-rendered, shadows baked in) rather than rebuilt in HTML/CSS — they're pixel-exact crops of the design already.
 - Replaced the create-next-app boilerplate `app/layout.tsx` (Geist font, "Create Next App" title) with Inter via `next/font/google` and real JobPilot metadata, per ui-rules.md.

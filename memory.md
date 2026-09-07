@@ -1,41 +1,45 @@
-# Memory — Feature 13 Company Research Agent Complete
+# Memory — Feature 14 Dashboard Page Built (pending live visual QA)
 
-Last updated: 2026-09-07 23:40 IST
+Last updated: 2026-09-08 01:44 IST
 
 ## What was built
 
-- **Feature 13 (Company Research Agent)**: "Research Company" button on the job details page now runs a real Stagehand browser session against the company's homepage + up to 3 sub-pages, then synthesizes a 9-field dossier via AI and saves it to `jobs.company_research`.
-- New files: `actions/research.ts` (`researchCompany(jobId)` Server Action — the real logic), `app/api/agent/research/route.ts` (thin wrapper, spec parity with build-plan, mirrors Feature 10's `find` route pattern), `lib/browserbase.ts` (Browserbase config + the OpenRouter `ClientLLM` adapter that powers Stagehand's own act/extract calls), `lib/company-homepage.ts` (`deriveHomepageUrl` — server-side redirect-follow, no browser needed), `lib/company-research-schema.ts` (dossier JSON schema + synthesis system prompt).
-- `components/job-details/JobDetails.tsx` converted to a Client Component; wired the button to `researchCompany`, added loading/error states, and built out full rendering for all 9 dossier fields (Company Overview, Tech Stack, Culture, Why This Role, Your Edge, Gaps to Address, Smart Questions, Interview Prep, Sources) — previously only an empty-state placeholder.
-- `lib/job-types.ts`'s `Job.company_research` retyped from `Record<string, unknown>` to the real `CompanyResearchDossier` shape.
-- `next.config.ts` gained `serverExternalPackages: ["@browserbasehq/stagehand"]` (Turbopack can't bundle a `new URL("../", import.meta.url)` extension-asset lookup inside Stagehand).
-- `zod` pinned to `4.4.3` explicitly (was only transitive before) so it dedupes with Stagehand's own bundled zod — two different installed versions produce incompatible `ZodType`s at the TS level otherwise.
-- **Shared-infrastructure fix** (benefits every feature, not just this one): `lib/ai-extraction.ts`'s TinyFish fallback tier (`extractWithTinyFish`) had no timeout and could hang ~10 minutes on a user-facing action; bounded it with `AbortSignal.timeout(PER_MODEL_TIMEOUT_MS)`, same 20s bound OpenRouter's tier already uses.
+- **Feature 14 (Dashboard Page — Full UI)**, matching `context/designs/dashboard.png` exactly: new route `app/dashboard/page.tsx` using the same shell pattern as `app/find-jobs/page.tsx` (`Navbar` + `main max-w-[1440px] px-8 py-8` + `Footer`).
+- New `components/dashboard/` directory:
+  - `StatCard.tsx` — the 4 top tiles (Total Jobs Found 284/+12%, Avg. Match Rate 82%/+3%, Companies Researched 35, Jobs This Week 28).
+  - `RecentActivity.tsx` — 5 mock activity rows with colored dots (purple/blue/green), matching design text and timestamps exactly.
+  - `ChartCard.tsx` — shared white rounded-2xl card shell used by all three charts.
+  - `CompanyResearchChart.tsx` — blue bar chart, 7-day mock data (Mon-Sun).
+  - `JobsOverTimeChart.tsx` — purple area/line chart with gradient fill, 7-day mock data.
+  - `MatchScoreChart.tsx` — green bar chart, 5 match-score buckets (50-60% … 90-100%).
+- All chart colors pull from the app's existing CSS custom properties (`var(--color-accent)`, `var(--color-info)`, `var(--color-success-alt)`, `var(--color-border-light)`, `var(--color-text-muted)`) so they stay in sync with `globals.css` design tokens rather than hardcoding hex.
+- All numbers/rows are hardcoded mock data reproducing the design pixel-for-pixel in content — no DB/PostHog wiring yet (that's Features 15-17, one section at a time per the build-plan).
 
 ## Decisions made
 
-- **Stagehand's own LLM binding uses OpenRouter, not Anthropic or OpenAI** — reversed twice during the architecture session. `library-docs.md`'s literal Stagehand/OpenAI example doesn't match the installed `@browserbasehq/stagehand@4.0.2` API at all (different constructor pattern, different `extract()` signature). Stagehand v4's `model.modelName` is a closed provider-string union with no OpenRouter/custom-baseURL support — and this app genuinely has no `ANTHROPIC_API_KEY` configured (confirmed via isolated Node repro: `Stagehand.create()` hard-rejects the config when `apiKey` is empty). Landed on Stagehand's `ClientLLM` escape hatch (`{ generate: fn }`), implemented in `lib/browserbase.ts` as a thin adapter over the existing `getOpenRouterClient()`, typed directly against Stagehand's own exported `ClientLLM` type. This means Stagehand's browser actions and the app's synthesis step now share the same provider and free-model rotation — no new API key was ever needed despite two rounds of "add a key" being considered.
-- **Synthesis reuses `lib/ai-extraction.ts`'s existing 3-tier fallback** (`extractStructuredData`) exactly like Feature 10's job matching — no separate AI plumbing for the dossier.
-- **`agent_runs` row still created per research call** purely because `agent_logs.run_id` is `NOT NULL` in the schema — not because research is a batch-style run. Feature 16's activity feed will read `jobs.company_research IS NOT NULL` directly per build-plan, not this run row.
+- **Installed `recharts`** for the three charts, per explicit user request (I had proposed hand-rolled inline SVG to avoid a new dependency; user overrode with "install recharts before for additional help"). First charting library in the project — noted in `context/progress-tracker.md`'s decisions log.
+- Classified this as **bounded** work (brainstorming skill) — existing app, existing page-shell pattern, existing design tokens, just a new route + components. Short in-chat design was presented and approved before implementation; no separate spec file was written.
+- `context/ui-registry.md` is still just a title/empty — confirmed it isn't actually maintained despite the `imprint` skill's convention, so no entry was added there for the new dashboard components (would be inventing an unfollowed pattern).
 
 ## Problems solved
 
-- Relative sub-page URLs (e.g. `/about`) from the model's `pageLinks` crashed `page.goto()` with a CDP "invalid URL" error — fixed by resolving against the homepage origin with `new URL(url, homepageUrl)`.
-- TinyFish's unbounded ~10-minute fallback hang (shared file, affects every feature using this AI fallback chain) — fixed with a bounded timeout.
-- Two Stagehand API-shape mismatches between `library-docs.md`'s docs and the actually-installed v4.0.2 SDK, discovered by reading the real `.d.ts`/`.mjs` rather than trusting the docs file.
-- zod version mismatch between the app's top-level zod and Stagehand's bundled zod causing TS structural-incompatibility errors — fixed by pinning `zod@4.4.3` explicitly so npm dedupes.
+- N/A — clean build, no blockers this session.
 
 ## Current state
 
-- Feature 13 (Company Research Agent) — ✅ complete, confirmed working end-to-end via live browser QA on a real account and a real Canva job row (not mocked): full Stagehand session (homepage + 3 sub-pages) succeeded, synthesis produced a genuinely well-grounded, Canva-specific dossier, and the result was confirmed persisted to the DB via a hard page reload.
-- `npm run lint` and `npm run build` both clean.
-- `context/progress-tracker.md` updated — Phase 4 is now fully complete; Phase 5 (Dashboard) is next.
+- `npm run lint` and `npm run build` both clean; `/dashboard` appears in the Next.js route table.
+- `context/progress-tracker.md` updated: Phase 5 in progress, Feature 14 checked off (marked "pending live visual QA"), decisions log updated with the recharts note and the mock-data note.
+- **Visual QA not yet done.** `/dashboard` is gated behind the session-auth proxy (same as `/find-jobs`), so it can't be screenshotted without logging in first. I asked the user for test credentials to drive a Playwright comparison against `context/designs/dashboard.png`; the answer that came back didn't actually contain credentials (selected the option label but no login was pasted in). Session ended before this was resolved.
 - Feature 03 (PostHog Initialization) — still open/partial, unchanged, unrelated to this work.
+- Uncommitted at session end: `package.json`/`package-lock.json` (recharts), `app/dashboard/` (new), `components/dashboard/` (new), `context/progress-tracker.md` edits. Nothing has been committed yet — user has not asked for a commit.
 
 ## Next session starts with
 
-- **Feature 14 (Dashboard Page — Full UI)** — per build-plan Phase 5: four stat cards (Total Jobs Found, Avg. Match Rate, Companies Researched, Cover Letters Generated) with mock numbers + trend indicators, a Recent Activity card (5 mock entries with colored dots/timestamps), a Resume Tailoring Activity bar chart, a Jobs Found Over Time line chart, a Match Score Distribution bar chart, and an incomplete-profile banner if the profile isn't complete. All mock data at this stage — Features 15-17 wire it to real DB/PostHog data afterward.
+1. **Get test login credentials from the user** (or have them log in themselves and eyeball it) and run a Playwright visual pass on `/dashboard` against `context/designs/dashboard.png` — check spacing, the exact stat-card delta-pill styling, chart axis tick values/gridline style, and the Recent Activity dot colors/order against the reference image pixel-for-pixel.
+2. Fix anything the visual QA turns up, then mark Feature 14 fully confirmed (drop the "pending live visual QA" qualifier) in `context/progress-tracker.md`.
+3. After that: **Feature 15 (Stats Bar — Real Data)** — replace the four `StatCard` mock values in `app/dashboard/page.tsx` with real InsForge queries (jobs count, avg match_score, distinct researched companies, jobs found this week), following the same query patterns used in `app/find-jobs/page.tsx`.
+4. Then Feature 16 (Recent Activity — Real Data, reading `agent_runs`/`company_research` — remember null `job_title_searched`/`location_searched` on research-only runs) and Feature 17 (Analytics Charts — PostHog Data).
 
 ## Open questions
 
-- None blocking. Note for whoever builds Feature 15/16: `agent_runs` rows created by Feature 13's research calls have `job_title_searched`/`location_searched` left null (they don't apply to a single-job research action) — don't assume every `agent_runs` row represents a job search batch when building the stats/activity queries.
+- What test account/credentials should be used for browser-based visual QA going forward? Not resolved this session — needed before Feature 14 can be marked fully verified.
