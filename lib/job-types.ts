@@ -2,6 +2,8 @@
 // MockJob type ahead of this landing (see context/ui-registry.md); Feature
 // 10 rebases JobsTable onto this real type.
 
+import { CompanyResearchDossier } from "@/lib/company-research-schema";
+
 export type Job = {
   id: string;
   run_id: string | null;
@@ -24,7 +26,7 @@ export type Job = {
   match_reason: string | null;
   matched_skills: string[] | null;
   missing_skills: string[] | null;
-  company_research: Record<string, unknown> | null;
+  company_research: CompanyResearchDossier | null;
   found_at: string;
   // When the job was originally posted (Adzuna's `created` field for
   // source: 'search' rows). Null for URL-based jobs (Feature 12/13) or any

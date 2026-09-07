@@ -54,11 +54,18 @@ Extract and return structured JSON output strictly conforming to the requested s
 
   const cleanedSchema = cleanSchemaForTinyFish(jsonSchema.schema) as Record<string, unknown>;
 
-  const response = await client.agent.run({
-    goal,
-    url: "https://example.com",
-    output_schema: cleanedSchema,
-  });
+  // agent.run() has no request-level timeout option of its own (only an
+  // AbortSignal) and defaults to a ~10 minute server-side ceiling — far too
+  // long for this to be the last tier of a user-facing action. Bound it the
+  // same way OPENROUTER's PER_MODEL_TIMEOUT_MS bounds that tier.
+  const response = await client.agent.run(
+    {
+      goal,
+      url: "https://example.com",
+      output_schema: cleanedSchema,
+    },
+    { signal: AbortSignal.timeout(PER_MODEL_TIMEOUT_MS) }
+  );
 
   if (response.status === "COMPLETED" && response.result) {
     return response.result as T;

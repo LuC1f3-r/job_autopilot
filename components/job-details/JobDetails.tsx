@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -12,9 +15,13 @@ import {
   Search,
   Check,
   X,
+  Loader2,
+  HelpCircle,
+  Lightbulb,
 } from "lucide-react";
 import { Job } from "@/lib/job-types";
 import { formatRelativeDate } from "@/lib/format-date";
+import { researchCompany } from "@/actions/research";
 
 /** Match score badge color — same green/blue/orange scale JobsTable uses. */
 function matchScoreBadgeClass(score: number) {
@@ -51,6 +58,27 @@ type Props = {
 export function JobDetails({ job }: Props) {
   const matchedSkills = job.matched_skills || [];
   const missingSkills = job.missing_skills || [];
+
+  const [dossier, setDossier] = useState(job.company_research);
+  const [isResearching, setIsResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+
+  async function handleResearch() {
+    setIsResearching(true);
+    setResearchError(null);
+    try {
+      const result = await researchCompany(job.id);
+      if (result.success && result.dossier) {
+        setDossier(result.dossier);
+      } else {
+        setResearchError(result.error || "Failed to research this company.");
+      }
+    } catch {
+      setResearchError("Something went wrong while researching this company.");
+    } finally {
+      setIsResearching(false);
+    }
+  }
 
   return (
     <>
@@ -208,7 +236,7 @@ export function JobDetails({ job }: Props) {
         </div>
       )}
 
-      {/* Company Research — empty state only, Feature 13 wires the agent */}
+      {/* Company Research */}
       <div className="rounded-2xl border border-border bg-surface">
         <div className="flex items-center justify-between p-6">
           <div className="flex items-center gap-2">
@@ -219,22 +247,156 @@ export function JobDetails({ job }: Props) {
           </div>
           <button
             type="button"
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground hover:bg-accent-dark"
+            onClick={handleResearch}
+            disabled={isResearching}
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Search className="h-4 w-4" />
-            Research Company
+            {isResearching ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            {isResearching ? "Researching…" : dossier ? "Research Again" : "Research Company"}
           </button>
         </div>
-        <div className="flex flex-col items-center justify-center gap-2 border-t border-border-light px-6 py-16 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-secondary text-text-muted">
-            <Building2 className="h-5 w-5" />
-          </span>
-          <p className="text-sm font-semibold text-text-primary">No research yet</p>
-          <p className="max-w-sm text-sm text-text-secondary">
-            Click &ldquo;Research Company&rdquo; to let the AI browse {job.company || "the company"}
-            &apos;s public pages and build a dossier.
-          </p>
-        </div>
+
+        {researchError && (
+          <p className="border-t border-border-light px-6 py-4 text-sm text-error">{researchError}</p>
+        )}
+
+        {!dossier && !isResearching && !researchError && (
+          <div className="flex flex-col items-center justify-center gap-2 border-t border-border-light px-6 py-16 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-secondary text-text-muted">
+              <Building2 className="h-5 w-5" />
+            </span>
+            <p className="text-sm font-semibold text-text-primary">No research yet</p>
+            <p className="max-w-sm text-sm text-text-secondary">
+              Click &ldquo;Research Company&rdquo; to let the AI browse {job.company || "the company"}
+              &apos;s public pages and build a dossier.
+            </p>
+          </div>
+        )}
+
+        {isResearching && !dossier && (
+          <div className="flex flex-col items-center justify-center gap-2 border-t border-border-light px-6 py-16 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-accent" />
+            <p className="text-sm font-semibold text-text-primary">Researching {job.company || "this company"}…</p>
+            <p className="max-w-sm text-sm text-text-secondary">
+              This can take up to a couple of minutes while the agent browses their site.
+            </p>
+          </div>
+        )}
+
+        {dossier && (
+          <div className="flex flex-col gap-6 border-t border-border-light p-6">
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                Company Overview
+              </p>
+              <p className="text-sm leading-relaxed text-text-primary">{dossier.companyOverview}</p>
+            </div>
+
+            {dossier.techStack.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                  Tech Stack
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {dossier.techStack.map((tech) => (
+                    <span
+                      key={tech}
+                      className="rounded-full bg-surface-secondary px-3 py-1 text-sm font-medium text-text-secondary"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dossier.culture.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">Culture</p>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-text-primary">
+                  {dossier.culture.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {dossier.whyThisRole && (
+              <div>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                  Why This Role
+                </p>
+                <p className="text-sm leading-relaxed text-text-primary">{dossier.whyThisRole}</p>
+              </div>
+            )}
+
+            {dossier.yourEdge.length > 0 && (
+              <div className="rounded-xl bg-success-lightest p-4">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-success-foreground uppercase">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Your Edge
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-text-primary">
+                  {dossier.yourEdge.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {dossier.gapsToAddress.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                  Gaps to Address
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-text-primary">
+                  {dossier.gapsToAddress.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {dossier.smartQuestions.length > 0 && (
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                  <HelpCircle className="h-3.5 w-3.5" />
+                  Smart Questions to Ask
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-text-primary">
+                  {dossier.smartQuestions.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {dossier.interviewPrep.length > 0 && (
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-text-secondary uppercase">
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  Interview Prep
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-text-primary">
+                  {dossier.interviewPrep.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {dossier.sources.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-text-secondary uppercase">Sources</p>
+                <p className="text-xs text-text-muted">{dossier.sources.join(" · ")}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Apply Now */}
