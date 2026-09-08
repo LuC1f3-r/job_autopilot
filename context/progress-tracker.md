@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 5 — Dashboard (in progress)
-**Last completed:** 16 Recent Activity — Real Data (code-complete, lint/tsc/build clean, unit-tested). Feature 14 pending live visual QA.
-**Next:** 17 Analytics Charts — PostHog Data. 03 PostHog Initialization is still partially built (see note below) and remains open.
+**Phase:** Phase 5 — Dashboard (Phase 5 code-complete)
+**Last completed:** 17 Analytics Charts — PostHog Data (code-complete, lint/tsc/build clean, unit-tested). Feature 14 pending live visual QA.
+**Next:** Verify Feature 03 PostHog Initialization & perform final visual QA on logged-in dashboard.
 
 ---
 
@@ -44,7 +44,7 @@ Update this file after every completed feature. Any AI agent reading this should
 - [x] 14 Dashboard Page — Full UI (mock data; pending live visual QA)
 - [x] 15 Stats Bar — Real Data
 - [x] 16 Recent Activity — Real Data
-- [ ] 17 Analytics Charts — PostHog Data
+- [x] 17 Analytics Charts — PostHog Data
 
 ---
 
@@ -131,6 +131,7 @@ Update this file after every completed feature. Any AI agent reading this should
   - **Live QA (real account, real Canva job row, not a mock)**: full real run — 1 homepage + 3 sub-page Stagehand extractions against `canva.com`, all succeeding after the two bug fixes above, followed by real AI synthesis producing a dossier grounded in genuine, current Canva-specific details (Magic Layers/Magic Write/Magic Resize AI tools, the Affinity acquisition, Apps Marketplace integrations with Slack/Salesforce/Shopify/Microsoft Teams) fused with the candidate's actual profile history. Confirmed persisted (not just client state) via a hard page reload rendering the identical saved dossier from the DB. `npm run lint` and `npm run build` both clean throughout.
 - **15 Stats Bar — Real Data wired to InsForge DB.** Query runs server-side in `app/dashboard/page.tsx` via `createInsforgeServer()` scoped to `user_id = user.id`. Pure calculation logic isolated in `lib/dashboard-stats.ts` (`calculateDashboardStats`) to comply with React 19 purity rules (no `Date.now()` during component render) and enable direct unit testing. Computes real counts: Total Jobs Found, Avg. Match Rate (with week-over-week delta and adaptive caption), Companies Researched (distinct researched companies count), and Jobs This Week. `StatCard.tsx` updated to support negative delta indicator styling (`bg-error/10 text-error`) alongside positive styling. All unit tests and `next build` clean.
 - **16 Recent Activity — Real Data wired to InsForge DB.** Query runs in parallel with jobs query in `app/dashboard/page.tsx` via `Promise.all`: fetches completed `agent_runs` (`status = 'completed'` and `job_title_searched IS NOT NULL`) alongside researched jobs (`company_research IS NOT NULL`). Processing and formatting isolated in `lib/dashboard-activity.ts` (`buildRecentActivities`) to maintain React 19 purity and full unit testability. Items are sorted reverse-chronologically with relative timestamps via `formatRelativeDate()`. Job discovery runs render with success green dots (`bg-success`) and format as "Found X jobs for [jobTitle]", while company research runs render with info blue dots (`bg-info`) and format as "Researched [company]". `RecentActivity.tsx` renders up to 5 items with a graceful empty state when no activity is recorded.
+- **17 Analytics Charts — PostHog Data.** Dual-layer query engine built in `lib/dashboard-analytics.ts` (`getDashboardAnalytics`). If `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` are configured, queries PostHog's API endpoint; otherwise, cleanly computes identical aggregations from InsForge `jobs` table records. Charts ([CompanyResearchChart](file:///Users/niyazahamadherkal/Documents/personal%20work/job_pilot/components/dashboard/CompanyResearchChart.tsx), [JobsOverTimeChart](file:///Users/niyazahamadherkal/Documents/personal%20work/job_pilot/components/dashboard/JobsOverTimeChart.tsx), [MatchScoreChart](file:///Users/niyazahamadherkal/Documents/personal%20work/job_pilot/components/dashboard/MatchScoreChart.tsx)) accept typed data props, render styled interactive Recharts tooltips, dynamically scale Y-axis bounds based on real data ranges, and render dedicated centered empty states when 0 events exist in the period. All unit tests and `next build` clean.
 
 
 ---

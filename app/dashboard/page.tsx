@@ -15,13 +15,17 @@ import {
   AgentRunRow,
   ActivityItem,
 } from "@/lib/dashboard-activity";
+import {
+  getDashboardAnalytics,
+  DashboardAnalytics,
+} from "@/lib/dashboard-analytics";
 
 /**
- * Feature 15 & 16 — Dashboard page with real InsForge DB data:
+ * Features 14-17 — Complete Dashboard Page:
+ * - Feature 14: Full responsive layout shell & components
  * - Feature 15: Stats bar (Total Jobs, Avg Match Rate, Companies Researched, Jobs This Week)
- * - Feature 16: Recent Activity (reverse-chronological feed of job searches and company research)
- *
- * Feature 17 will wire the three analytics charts to real PostHog data.
+ * - Feature 16: Recent Activity (reverse-chronological feed of searches & company research)
+ * - Feature 17: Analytics Charts (Jobs Over Time, Match Score Distribution, Company Research Activity)
  */
 export default async function DashboardPage() {
   const user = await getSessionUser();
@@ -64,6 +68,7 @@ export default async function DashboardPage() {
 
   const stats = calculateDashboardStats(jobs);
   const activities: ActivityItem[] = buildRecentActivities(runs, jobs, 5);
+  const analytics: DashboardAnalytics = await getDashboardAnalytics(user?.id, jobs);
 
   return (
     <>
@@ -96,12 +101,12 @@ export default async function DashboardPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <RecentActivity activities={activities} />
-          <CompanyResearchChart />
+          <CompanyResearchChart data={analytics.companyResearchActivity} />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <JobsOverTimeChart />
-          <MatchScoreChart />
+          <JobsOverTimeChart data={analytics.jobsOverTime} />
+          <MatchScoreChart data={analytics.matchScoreDistribution} />
         </div>
       </main>
       <Footer />
