@@ -20,11 +20,86 @@ type AdzunaSearchResponse = {
   results?: AdzunaJob[];
 };
 
-// City/region keywords mapped to Adzuna country codes. Not geocoding — a
-// static lookup covering the countries Adzuna's API actually supports for
-// this project (context/library-docs.md: default 'us', support gb/au/ca).
-// Falls back to 'us' when nothing matches, same as an empty location.
-const COUNTRY_KEYWORDS: { country: "gb" | "au" | "ca"; keywords: string[] }[] = [
+import { DiscoveredJob } from "./job-discovery/types";
+
+export type SupportedAdzunaCountry = "us" | "gb" | "au" | "ca" | "it" | "be" | "at";
+
+// City/region keywords mapped to Adzuna country codes.
+const COUNTRY_KEYWORDS: { country: Exclude<SupportedAdzunaCountry, "us">; keywords: string[] }[] = [
+  {
+    country: "it",
+    keywords: [
+      "italy",
+      "italia",
+      "milan",
+      "milano",
+      "rome",
+      "roma",
+      "turin",
+      "torino",
+      "naples",
+      "napoli",
+      "florence",
+      "firenze",
+      "bologna",
+      "genoa",
+      "genova",
+      "venice",
+      "venezia",
+      "verona",
+    ],
+  },
+  {
+    country: "be",
+    keywords: [
+      "belgium",
+      "belgique",
+      "belgië",
+      "brussels",
+      "bruxelles",
+      "brussel",
+      "antwerp",
+      "antwerpen",
+      "ghent",
+      "gent",
+      "liege",
+      "liège",
+      "bruges",
+      "brugge",
+      "leuven",
+      "namur",
+    ],
+  },
+  {
+    country: "at",
+    keywords: [
+      "austria",
+      "österreich",
+      "oesterreich",
+      "vienna",
+      "wien",
+      "graz",
+      "linz",
+      "salzburg",
+      "innsbruck",
+      "klagenfurt",
+    ],
+  },
+  {
+    country: "au",
+    keywords: [
+      "australia",
+      "sydney",
+      "melbourne",
+      "brisbane",
+      "perth",
+      "adelaide",
+      "canberra",
+      "gold coast",
+      "hobart",
+      "darwin",
+    ],
+  },
   {
     country: "gb",
     keywords: [
@@ -41,18 +116,6 @@ const COUNTRY_KEYWORDS: { country: "gb" | "au" | "ca"; keywords: string[] }[] = 
     ],
   },
   {
-    country: "au",
-    keywords: [
-      "australia",
-      "sydney",
-      "melbourne",
-      "brisbane",
-      "perth",
-      "adelaide",
-      "canberra",
-    ],
-  },
-  {
     country: "ca",
     keywords: [
       "canada",
@@ -66,7 +129,7 @@ const COUNTRY_KEYWORDS: { country: "gb" | "au" | "ca"; keywords: string[] }[] = 
   },
 ];
 
-export function detectCountry(location: string): "us" | "gb" | "au" | "ca" {
+export function detectCountry(location: string): SupportedAdzunaCountry {
   const normalized = location.toLowerCase().trim();
   if (!normalized) return "us";
 
@@ -78,16 +141,54 @@ export function detectCountry(location: string): "us" | "gb" | "au" | "ca" {
   return "us";
 }
 
+export function formatAdzunaSalary(job: AdzunaJob, country: string = "us"): string | null {
+  if (!job.salary_min) return null;
+  const min = Math.round(job.salary_min / 1000);
+  const max = job.salary_max ? Math.round(job.salary_max / 1000) : min;
+  const symbol = country === "gb" ? "£" : (country === "it" || country === "be" || country === "at") ? "€" : "$";
+  return `${symbol}${min}k - ${symbol}${max}k`;
+}
+
+export function toDiscoveredJob(job: AdzunaJob, country: string = "us"): DiscoveredJob {
+  return {
+    id: String(job.id),
+    title: job.title,
+    company: job.company?.display_name || "Unknown Company",
+    location: job.location?.display_name || "Remote",
+    description: job.description || "",
+    redirect_url: job.redirect_url,
+    salary: formatAdzunaSalary(job, country),
+    job_type: job.contract_type || "fulltime",
+    posted_at: job.created || null,
+    provider: "adzuna",
+  };
+}
+
 const REMOTE_REGEX = /\b(remote|work from home|wfh|telecommute|anywhere)\b/i;
+
+const CITY_NORMALIZATIONS: Record<string, string> = {
+  brussels: "Bruxelles",
+  milan: "Milano",
+  rome: "Roma",
+  vienna: "Wien",
+};
 
 export function parseLocation(rawLocation: string): { where: string; isRemote: boolean } {
   const trimmed = (rawLocation || "").trim();
   const isRemote = REMOTE_REGEX.test(trimmed);
-  const cleanedPlace = trimmed
+  let cleanedPlace = trimmed
     .replace(new RegExp(REMOTE_REGEX.source, "gi"), "")
     .replace(/[()]/g, "")
     .replace(/^[,/\-\s]+|[,/\-\s]+$/g, "")
     .trim();
+
+  const lower = cleanedPlace.toLowerCase();
+  for (const [english, local] of Object.entries(CITY_NORMALIZATIONS)) {
+    if (lower === english || lower.includes(english)) {
+      cleanedPlace = cleanedPlace.replace(new RegExp(english, "gi"), local);
+      break;
+    }
+  }
 
   return {
     where: cleanedPlace,

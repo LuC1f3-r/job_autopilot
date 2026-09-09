@@ -8,7 +8,9 @@ import {
   isAnyAiConfigured,
   NoAiProviderConfiguredError,
 } from "@/lib/ai-extraction";
-import { AdzunaJob, detectCountry, searchJobs } from "@/lib/adzuna";
+import { detectCountry, searchJobs, toDiscoveredJob } from "@/lib/adzuna";
+import { isFirecrawlConfigured, isUaeLocation, searchFirecrawlJobs } from "@/lib/firecrawl";
+import { DiscoveredJob } from "@/lib/job-discovery/types";
 import {
   JOB_MATCH_JSON_SCHEMA,
   JOB_MATCH_SYSTEM_PROMPT,
@@ -49,13 +51,6 @@ async function logAgentError(
   } catch (logError) {
     console.error("[actions/jobs:logAgentError] failed to write agent_logs row:", logError);
   }
-}
-
-function formatSalary(job: AdzunaJob): string | null {
-  if (!job.salary_min) return null;
-  const min = Math.round(job.salary_min / 1000);
-  const max = job.salary_max ? Math.round(job.salary_max / 1000) : min;
-  return `$${min}k - $${max}k`;
 }
 
 // POST-equivalent business logic behind app/api/agent/find/route.ts.
@@ -128,37 +123,74 @@ export async function findJobs(jobTitle: string, location: string): Promise<Find
       properties: { userId, jobTitle: trimmedTitle, location: trimmedLocation },
     });
 
-    let adzunaResults: AdzunaJob[];
-    try {
-      adzunaResults = await searchJobs(trimmedTitle, trimmedLocation, country);
-    } catch (adzunaError) {
-      console.error("[actions/jobs:findJobs] Adzuna search error:", adzunaError);
-      await logAgentError(
-        insforge,
-        runId,
-        userId,
-        adzunaError instanceof Error ? adzunaError.message : "Adzuna search failed"
-      );
-      await insforge.database
-        .from("agent_runs")
-        .update({ status: "failed", completed_at: new Date().toISOString() })
-        .eq("id", runId);
-      return { success: false, error: "Failed to search for jobs. Please try again." };
+    let discoveredJobs: DiscoveredJob[] = [];
+
+    if (isUaeLocation(trimmedLocation) && isFirecrawlConfigured()) {
+      try {
+        discoveredJobs = await searchFirecrawlJobs(trimmedTitle, trimmedLocation);
+      } catch (firecrawlError) {
+        console.error("[actions/jobs:findJobs] Firecrawl search error:", firecrawlError);
+        await logAgentError(
+          insforge,
+          runId,
+          userId,
+          firecrawlError instanceof Error ? firecrawlError.message : "Firecrawl search failed"
+        );
+      }
+    } else {
+      try {
+        const adzunaResults = await searchJobs(trimmedTitle, trimmedLocation, country);
+        discoveredJobs = adzunaResults.map((j) => toDiscoveredJob(j, country));
+      } catch (adzunaError) {
+        console.error("[actions/jobs:findJobs] Adzuna search error:", adzunaError);
+        await logAgentError(
+          insforge,
+          runId,
+          userId,
+          adzunaError instanceof Error ? adzunaError.message : "Adzuna search failed"
+        );
+      }
+
+      // If Adzuna returned 0 results and Firecrawl is configured, use Firecrawl web discovery as fallback
+      if (discoveredJobs.length === 0 && isFirecrawlConfigured()) {
+        try {
+          discoveredJobs = await searchFirecrawlJobs(trimmedTitle, trimmedLocation);
+        } catch (firecrawlError) {
+          console.warn("[actions/jobs:findJobs] Firecrawl fallback search error:", firecrawlError);
+        }
+      }
     }
 
-    // Scores and saves one Adzuna result. Runs concurrently across all
-    // results (see Promise.allSettled below) — sequential scoring was
-    // measured at ~142s for a 10-job batch (each job can take up to 20s per
-    // model, up to 3 models tried), which read as a hung/broken search.
-    // Concurrent scoring bounds total time to roughly the slowest single
-    // job instead of the sum of all of them.
-    async function scoreAndSaveJob(job: AdzunaJob): Promise<{ matchScore: number } | null> {
+    if (discoveredJobs.length === 0) {
+      await insforge.database
+        .from("agent_runs")
+        .update({
+          status: "completed",
+          jobs_found: 0,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+
+      revalidatePath("/find-jobs");
+
+      return {
+        success: true,
+        jobsFound: 0,
+        strongMatches: 0,
+        message: `No jobs found matching "${trimmedTitle}" in "${trimmedLocation || "all locations"}". Try broadening your search terms.`,
+      };
+    }
+
+    // Scores and saves one discovered job result. Runs concurrently across all
+    // results (see Promise.allSettled below) to bound total time to roughly the
+    // slowest single job instead of the sum of all of them.
+    async function scoreAndSaveJob(job: DiscoveredJob): Promise<{ matchScore: number } | null> {
       try {
         const matchInput = JSON.stringify({
           job: {
             title: job.title,
-            company: job.company.display_name,
-            location: job.location.display_name,
+            company: job.company,
+            location: job.location,
             description: job.description,
           },
           candidateProfile: {
@@ -185,17 +217,17 @@ export async function findJobs(jobTitle: string, location: string): Promise<Find
             source_url: job.redirect_url,
             external_apply_url: job.redirect_url,
             title: job.title,
-            company: job.company.display_name,
-            location: job.location.display_name,
-            salary: formatSalary(job),
-            job_type: job.contract_type || "fulltime",
+            company: job.company,
+            location: job.location,
+            salary: job.salary,
+            job_type: job.job_type || "fulltime",
             about_role: job.description,
             match_score: match.matchScore,
             match_reason: match.matchReason,
             matched_skills: match.matchedSkills,
             missing_skills: match.missingSkills,
             found_at: new Date().toISOString(),
-            posted_at: job.created || null,
+            posted_at: job.posted_at || null,
           },
         ]);
 
@@ -232,7 +264,7 @@ export async function findJobs(jobTitle: string, location: string): Promise<Find
       }
     }
 
-    const settled = await Promise.allSettled(adzunaResults.map(scoreAndSaveJob));
+    const settled = await Promise.allSettled(discoveredJobs.map(scoreAndSaveJob));
 
     let jobsSaved = 0;
     let strongMatches = 0;
